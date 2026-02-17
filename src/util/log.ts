@@ -50,6 +50,7 @@ export namespace Log {
   export function file() {
     return logpath
   }
+  /* c8 ignore next 4 */
   let write = (msg: any) => {
     process.stderr.write(msg)
     return msg.length

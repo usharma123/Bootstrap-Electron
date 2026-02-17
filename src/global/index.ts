@@ -11,6 +11,7 @@ const config = path.join(xdgConfig!, app)
 const state = path.join(xdgState!, app)
 
 export namespace Global {
+  /* c8 ignore start */
   export const Path = {
     // Allow override via BOOTSTRAP_TEST_HOME for test isolation
     get home() {
@@ -23,6 +24,7 @@ export namespace Global {
     config,
     state,
   }
+  /* c8 ignore stop */
 }
 
 await Promise.all([
