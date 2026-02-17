@@ -6,11 +6,15 @@
   "type": "module",
   "private": true,
   "scripts": {
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.electron.json",
     "test": "bun test",
     "build": "bun run script/build.ts",
     "dev": "bun run --conditions=browser ./src/index.ts",
-    "clean": "rm -rf node_modules dist"
+    "clean": "rm -rf node_modules dist dist-electron",
+    "electron:build:main": "bun build ./src/electron/main.ts ./src/electron/preload.ts --outdir ./dist-electron --target=node --external electron",
+    "electron:build:renderer": "vite build --config vite.electron.renderer.config.ts",
+    "electron:build": "bun run electron:build:main && bun run electron:build:renderer",
+    "electron:start": "bun run electron:build && electron ./dist-electron/main.js"
   },
   "bin": {
     "bootstrap": "./bin/bootstrap"
@@ -35,7 +39,10 @@
     "@types/bun": "1.3.4",
     "@types/turndown": "5.0.5",
     "@types/yargs": "17.0.33",
+    "electron": "37.3.0",
     "typescript": "5.8.2",
+    "vite": "7.1.7",
+    "vite-plugin-solid": "2.11.8",
     "vscode-languageserver-types": "3.17.5",
     "why-is-node-running": "3.2.2"
   },

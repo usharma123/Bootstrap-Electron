@@ -84,6 +84,24 @@ bun run dev run "Write a test for the UserService class"
 bun run dev models openrouter
 ```
 
+## Electron Harness UI (MVP)
+
+The repository also includes a desktop Electron UI that talks to the existing harness JSON-RPC runtime over stdio.
+
+### Build and Run
+
+```bash
+bun install
+bun run electron:start
+```
+
+### Notes
+
+- The Electron main process owns one harness child process for the active workspace.
+- Renderer state persists selected workspace/thread in local storage.
+- Automations and Skills are layout placeholders in this MVP.
+- The harness protocol remains unchanged (`thread.*`, `turn.*`, `item.*`, `approval.*`).
+
 ## Configuration
 
 Create a `bootstrap.json` in your project root or `~/.config/bootstrap/bootstrap.json` for global settings.
