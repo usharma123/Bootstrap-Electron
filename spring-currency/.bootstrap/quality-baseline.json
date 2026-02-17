@@ -1,0 +1,361 @@
+{
+  "version": 1,
+  "timestamp": "2026-02-11T15:12:51.584Z",
+  "commit": "4a203726",
+  "projectPath": "/Users/utsavsharma/Documents/GitHub/CodeCLI/bootstrap-solidjs/spring-currency",
+  "metrics": {
+    "totalTests": 110,
+    "passedTests": 110,
+    "failedTests": 0,
+    "skippedTests": 0,
+    "coverage": {
+      "line": {
+        "percent": 100,
+        "covered": 56,
+        "total": 56
+      },
+      "branch": {
+        "percent": 100,
+        "covered": 2,
+        "total": 2
+      },
+      "instruction": {
+        "percent": 100,
+        "covered": 245,
+        "total": 245
+      },
+      "method": {
+        "percent": 100,
+        "covered": 13,
+        "total": 13
+      }
+    },
+    "perClass": {
+      "com.example.currency.config.OpenApiConfig": {
+        "line": 100,
+        "branch": 0,
+        "instruction": 100
+      },
+      "com.example.currency.service.ExchangeRateService": {
+        "line": 100,
+        "branch": 100,
+        "instruction": 100
+      },
+      "com.example.currency.CurrencyApplication": {
+        "line": 100,
+        "branch": 0,
+        "instruction": 100
+      },
+      "com.example.currency.controller.CurrencyController": {
+        "line": 100,
+        "branch": 0,
+        "instruction": 100
+      },
+      "com.example.currency.model.ConversionRequest": {
+        "line": 100,
+        "branch": 0,
+        "instruction": 100
+      },
+      "com.example.currency.model.ConversionResponse": {
+        "line": 100,
+        "branch": 0,
+        "instruction": 100
+      },
+      "com.example.currency.model.Currency": {
+        "line": 100,
+        "branch": 0,
+        "instruction": 100
+      }
+    },
+    "testClasses": [
+      "com.example.currency.service.ExchangeRateServiceTest$ConvertTests",
+      "com.example.currency.config.OpenApiConfigTest$ServersTests",
+      "com.example.currency.CurrencyApplicationTest$MainMethodTests",
+      "com.example.currency.CurrencyApplicationTest$AnnotationTests",
+      "com.example.currency.config.OpenApiConfigTest$InfoSectionTests",
+      "com.example.currency.model.ConversionResponseTest$ConstructorAccessorTests",
+      "com.example.currency.model.ConversionResponseTest$EqualsHashCodeTests",
+      "com.example.currency.controller.CurrencyControllerTest$ConvertEndpointTests",
+      "com.example.currency.model.CurrencyTest$OrdinalTests",
+      "com.example.currency.model.ConversionRequestTest$EqualsHashCodeTests",
+      "com.example.currency.config.OpenApiConfigTest$FullOpenAPIStructureTests",
+      "com.example.currency.config.OpenApiConfigTest$ContactTests",
+      "com.example.currency.service.ExchangeRateServiceTest$ServiceInstantiationTests",
+      "com.example.currency.model.CurrencyTest$ToStringTests",
+      "com.example.currency.config.OpenApiConfigTest$LicenseTests",
+      "com.example.currency.model.CurrencyTest$NameTests",
+      "com.example.currency.CurrencyApplicationTest$ApplicationClassTests",
+      "com.example.currency.controller.CurrencyControllerTest$ControllerInstantiationTests",
+      "com.example.currency.model.ConversionResponseTest$EqualsCanonicalTests",
+      "com.example.currency.model.ConversionRequestTest$EqualsCanonicalTests",
+      "com.example.currency.config.OpenApiConfigTest$OpenAPICreationTests",
+      "com.example.currency.model.CurrencyTest$ValuesTests",
+      "com.example.currency.model.CurrencyTest$CompareToTests",
+      "com.example.currency.model.CurrencyTest$ValueOfTests",
+      "com.example.currency.model.ConversionRequestTest$ConstructorAccessorTests",
+      "com.example.currency.model.CurrencyTest$EqualsHashCodeTests",
+      "com.example.currency.config.OpenApiConfigTest$ConfigInstantiationTests",
+      "com.example.currency.model.ConversionRequestTest$ToStringTests",
+      "com.example.currency.CurrencyApplicationTest$ClassStructureTests",
+      "com.example.currency.model.ConversionResponseTest$ToStringTests",
+      "com.example.currency.service.ExchangeRateServiceTest$AllCurrencyPairsTests"
+    ],
+    "testMethods": {
+      "ConfigInstantiationTests": [
+        "configShouldBeInstantiableWithNoArgConstructor",
+        "currencyOpenApiShouldReturnNonNullOpenAPI",
+        "currencyOpenApiShouldReturnSameInstanceOnMultipleCalls"
+      ],
+      "OpenAPICreationTests": [
+        "openAPIShouldHaveInfoSection",
+        "openAPIShouldHaveServersList",
+        "openAPIInfoShouldHaveTitle",
+        "openAPIInfoShouldHaveVersion",
+        "openAPIInfoShouldHaveDescription",
+        "openAPIInfoDescriptionShouldListSupportedCurrencies"
+      ],
+      "InfoSectionTests": [
+        "openAPIShouldHaveContactInformation",
+        "contactShouldHaveName",
+        "contactShouldHaveEmail"
+      ],
+      "ContactTests": [
+        "contactNameShouldNotBeNull",
+        "contactEmailShouldNotBeNull",
+        "contactEmailShouldBeValidFormat"
+      ],
+      "LicenseTests": [
+        "openAPIShouldHaveLicenseInformation",
+        "licenseShouldHaveName",
+        "licenseShouldHaveURL"
+      ],
+      "ServersTests": [
+        "serversListShouldHaveExactlyOneServer",
+        "serverShouldHaveURL",
+        "serverURLShouldBeLocalhost",
+        "serverShouldHaveDescription"
+      ],
+      "FullOpenAPIStructureTests": [
+        "completeOpenAPIStructureShouldBeValid",
+        "allInfoComponentsShouldBeProperlyLinked",
+        "openAPIShouldBeReusableAcrossMultipleCalls"
+      ],
+      "ControllerInstantiationTests": [
+        "controllerShouldBeInstantiableWithExchangeRateService",
+        "controllerShouldUseInjectedExchangeRateService",
+        "controllerShouldAcceptNullServiceWithoutThrowing"
+      ],
+      "ConvertEndpointTests": [
+        "convertShouldDelegateToExchangeRateService",
+        "convertShouldReturnSameResponseFromService",
+        "convertShouldPassThroughAllRequestFields",
+        "convertShouldHandleZeroAmount",
+        "convertShouldHandleSameCurrency",
+        "convertShouldCallServiceForAllCurrencyPairs",
+        "convertShouldPropagateServiceExceptions",
+        "convertShouldWorkWithLargeDecimalAmounts"
+      ],
+      "ApplicationClassTests": [
+        "mainClassShouldExistAndBeLoadable"
+      ],
+      "should": [
+        "shouldBeASpringBootApplication",
+        "classShouldNotBeAbstract",
+        "classShouldHaveEmptyPublicConstructor",
+        "springBootApplicationShouldEnableComponentScanningViaMetaAnnotation",
+        "springBootApplicationShouldHaveScanBasePackagesAttribute"
+      ],
+      "MainMethodTests": [
+        "mainMethodShouldExist",
+        "mainMethodShouldBePublicStaticVoid",
+        "mainMethodShouldNotThrowWithNoArgs"
+      ],
+      "ClassStructureTests": [
+        "classShouldBePublic"
+      ],
+      "AnnotationTests": [
+        "classShouldHaveSpringBootApplicationAnnotation"
+      ],
+      "ConstructorAccessorTests": [
+        "constructorShouldCreateRecordWithCorrectValues",
+        "accessorMethodsShouldReturnCorrectValuesForEdgeCases",
+        "allCurrenciesShouldBeUsableInRequest",
+        "constructorShouldCreateRecordWithCorrectValues",
+        "accessorMethodsShouldReturnCorrectValuesForEdgeCases",
+        "fromAndToShouldBeStringRepresentationsOfCurrencies",
+        "shouldHandleSameCurrencyConversionWithRateOne"
+      ],
+      "EqualsHashCodeTests": [
+        "equalsShouldReturnTrueForIdenticalRequests",
+        "equalsShouldReturnFalseForDifferentAmounts",
+        "equalsShouldReturnFalseForDifferentFromCurrencies",
+        "equalsShouldReturnFalseForDifferentToCurrencies",
+        "equalsShouldBeReflexive",
+        "equalsShouldBeSymmetric",
+        "hashCodeShouldBeEqualForEqualObjects",
+        "equalsWithNullShouldReturnFalse",
+        "equalsWithDifferentTypeShouldReturnFalse",
+        "equalsShouldReturnTrueForSameCurrency",
+        "equalsShouldReturnFalseForDifferentCurrencies",
+        "hashCodeShouldBeConsistentForSameCurrency",
+        "hashCodeForDifferentCurrenciesShouldNotBeEqual",
+        "equalsShouldReturnTrueForIdenticalResponses",
+        "equalsShouldReturnFalseForDifferentAmounts",
+        "equalsShouldReturnFalseForDifferentFromCurrencies",
+        "equalsShouldReturnFalseForDifferentToCurrencies",
+        "equalsShouldReturnFalseForDifferentResults",
+        "equalsShouldReturnFalseForDifferentRates",
+        "equalsShouldBeReflexive",
+        "equalsShouldBeSymmetric",
+        "hashCodeShouldBeEqualForEqualObjects",
+        "equalsWithNullShouldReturnFalse",
+        "equalsWithDifferentTypeShouldReturnFalse"
+      ],
+      "ToStringTests": [
+        "toStringShouldContainAllFieldValues",
+        "toStringShouldBeConsistent",
+        "toStringShouldReturnSameAsName",
+        "toStringShouldContainAllFieldValues",
+        "toStringShouldBeConsistent"
+      ],
+      "EqualsCanonicalTests": [
+        "equalsShouldFollowContractWithAllZeroValues",
+        "equalsShouldDistinguishDifferentCurrencyPairs",
+        "equalsShouldFollowContractWithAllZeroValues",
+        "equalsShouldDistinguishDifferentCurrencyPairs"
+      ],
+      "ValuesTests": [
+        "shouldContainTenCurrencyValues",
+        "shouldContainAllExpectedCurrencies"
+      ],
+      "ValueOfTests": [
+        "valueOfShouldReturnCorrectCurrencyForValidName",
+        "valueOfShouldThrowForInvalidName"
+      ],
+      "NameTests": [
+        "nameShouldReturnCorrectStringRepresentation",
+        "allNamesShouldMatchEnumConstantNames"
+      ],
+      "OrdinalTests": [
+        "ordinalShouldBeUniqueForEachCurrency",
+        "usdShouldHaveOrdinalZero"
+      ],
+      "CompareToTests": [
+        "compareToShouldOrderCurrenciesByOrdinal",
+        "compareToWithSameCurrencyShouldReturnZero"
+      ],
+      "ServiceInstantiationTests": [
+        "serviceShouldBeInstantiableWithNoArgConstructor",
+        "multipleServiceInstancesShouldBeIndependent"
+      ],
+      "ConvertTests": [
+        "convertShouldReturnCorrectResponseForUsdToEur",
+        "convertShouldReturnCorrectResponseForEurToUsd",
+        "convertShouldReturnRateOfOneForSameCurrency",
+        "convertShouldHandleZeroAmount",
+        "convertShouldRoundResultToTwoDecimalPlaces",
+        "convertShouldHandleLargeAmounts",
+        "convertShouldHandleSmallAmounts"
+      ],
+      "AllCurrencyPairsTests": [
+        "convertShouldWorkForAllCurrencyPairs",
+        "convertShouldProduceConsistentRates",
+        "responseShouldHaveCorrectStringRepresentations",
+        "usdConversionsShouldHaveRateEqualToTargetCurrencyRate"
+      ]
+    },
+    "slowTests": [
+      {
+        "name": "mainMethodShouldNotThrowWithNoArgs",
+        "className": "com.example.currency.CurrencyApplicationTest$MainMethodTests",
+        "time": 1.333
+      },
+      {
+        "name": "convertShouldCallServiceForAllCurrencyPairs",
+        "className": "com.example.currency.controller.CurrencyControllerTest$ConvertEndpointTests",
+        "time": 0.673
+      },
+      {
+        "name": "openAPIShouldBeReusableAcrossMultipleCalls",
+        "className": "com.example.currency.config.OpenApiConfigTest$FullOpenAPIStructureTests",
+        "time": 0.013
+      },
+      {
+        "name": "springBootApplicationShouldHaveScanBasePackagesAttribute",
+        "className": "com.example.currency.CurrencyApplicationTest$AnnotationTests",
+        "time": 0.004
+      },
+      {
+        "name": "convertShouldPropagateServiceExceptions",
+        "className": "com.example.currency.controller.CurrencyControllerTest$ConvertEndpointTests",
+        "time": 0.003
+      },
+      {
+        "name": "toStringShouldBeConsistent",
+        "className": "com.example.currency.model.ConversionResponseTest$ToStringTests",
+        "time": 0.003
+      },
+      {
+        "name": "convertShouldWorkWithLargeDecimalAmounts",
+        "className": "com.example.currency.controller.CurrencyControllerTest$ConvertEndpointTests",
+        "time": 0.002
+      },
+      {
+        "name": "convertShouldReturnSameResponseFromService",
+        "className": "com.example.currency.controller.CurrencyControllerTest$ConvertEndpointTests",
+        "time": 0.002
+      },
+      {
+        "name": "ordinalShouldBeUniqueForEachCurrency",
+        "className": "com.example.currency.model.CurrencyTest$OrdinalTests",
+        "time": 0.002
+      },
+      {
+        "name": "controllerShouldAcceptNullServiceWithoutThrowing",
+        "className": "com.example.currency.controller.CurrencyControllerTest$ControllerInstantiationTests",
+        "time": 0.002
+      }
+    ],
+    "productionClasses": {
+      "com.example.currency.config.OpenApiConfig": {
+        "methods": {
+          "currencyOpenApi/0": {
+            "lineNumber": 16,
+            "filePath": "/Users/utsavsharma/Documents/GitHub/CodeCLI/bootstrap-solidjs/spring-currency/src/main/java/com/example/currency/config/OpenApiConfig.java"
+          }
+        }
+      },
+      "com.example.currency.controller.CurrencyController": {
+        "methods": {
+          "convert/1": {
+            "lineNumber": 43,
+            "filePath": "/Users/utsavsharma/Documents/GitHub/CodeCLI/bootstrap-solidjs/spring-currency/src/main/java/com/example/currency/controller/CurrencyController.java"
+          }
+        }
+      },
+      "com.example.currency.CurrencyApplication": {
+        "methods": {
+          "main/1": {
+            "lineNumber": 7,
+            "filePath": "/Users/utsavsharma/Documents/GitHub/CodeCLI/bootstrap-solidjs/spring-currency/src/main/java/com/example/currency/CurrencyApplication.java"
+          }
+        }
+      },
+      "com.example.currency.model.Currency": {
+        "methods": {}
+      },
+      "com.example.currency.service.ExchangeRateService": {
+        "methods": {
+          "convert/1": {
+            "lineNumber": 24,
+            "filePath": "/Users/utsavsharma/Documents/GitHub/CodeCLI/bootstrap-solidjs/spring-currency/src/main/java/com/example/currency/service/ExchangeRateService.java"
+          },
+          "getRate/2": {
+            "lineNumber": 34,
+            "filePath": "/Users/utsavsharma/Documents/GitHub/CodeCLI/bootstrap-solidjs/spring-currency/src/main/java/com/example/currency/service/ExchangeRateService.java"
+          }
+        }
+      }
+    }
+  }
+}
