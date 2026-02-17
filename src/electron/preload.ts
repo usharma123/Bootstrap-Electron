@@ -10,6 +10,10 @@ const api: BootstrapHarnessAPI = {
     await ipcRenderer.invoke("harness:request", { method: "setWorkspace", params: { directory } })
   },
 
+  async reconnect() {
+    await ipcRenderer.invoke("harness:request", { method: "reconnect", params: {} })
+  },
+
   async listThreads() {
     const result = await ipcRenderer.invoke("harness:request", { method: "threadList", params: {} })
     return result.threads

@@ -9,6 +9,8 @@
   --accent-strong: #3bb49f;
   --danger: #bd3c56;
   --warning: #9e7d2a;
+  --tool: #3a6fa2;
+  --approval: #7a6b2a;
 }
 
 * {
@@ -46,6 +48,7 @@ body {
   border: 1px solid var(--line);
   background: color-mix(in oklab, var(--bg-panel) 90%, black);
   border-radius: 12px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.2);
 }
 
 .sidebar {
@@ -108,6 +111,7 @@ body {
 
 .thread-title {
   font-weight: 600;
+  letter-spacing: 0.01em;
 }
 
 .thread-time {
@@ -130,8 +134,9 @@ body {
 }
 
 .pane-title {
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 600;
+  letter-spacing: 0.01em;
 }
 
 .header-actions,
@@ -153,16 +158,38 @@ body {
   border: 1px solid var(--line);
   border-radius: 10px;
   background: color-mix(in oklab, var(--bg-raised) 90%, black);
-  padding: 10px;
+  padding: 12px;
+}
+
+.timeline-card.tone-user {
+  border-color: color-mix(in oklab, #587fb3 55%, var(--line));
+  background: color-mix(in oklab, #1b2a3a 36%, var(--bg-raised));
+}
+
+.timeline-card.tone-assistant {
+  border-color: color-mix(in oklab, var(--accent) 48%, var(--line));
+  background: color-mix(in oklab, #14312c 30%, var(--bg-raised));
+}
+
+.timeline-card.tone-tool {
+  border-color: color-mix(in oklab, var(--tool) 52%, var(--line));
+  background: color-mix(in oklab, #1b2a36 28%, var(--bg-raised));
+}
+
+.timeline-card.tone-approval {
+  border-color: color-mix(in oklab, var(--approval) 62%, var(--line));
+  background: color-mix(in oklab, #2b2715 42%, var(--bg-raised));
 }
 
 .timeline-card header {
   display: flex;
   justify-content: space-between;
-  text-transform: capitalize;
   color: var(--muted);
   font-size: 12px;
   margin-bottom: 8px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
 .timeline-card pre {
@@ -170,6 +197,7 @@ body {
   white-space: pre-wrap;
   word-break: break-word;
   font-family: "IBM Plex Mono", "SF Mono", monospace;
+  line-height: 1.45;
 }
 
 .approval-actions {
@@ -255,6 +283,19 @@ body {
   border-radius: 8px;
   padding: 10px;
   border: 1px solid;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.banner-content {
+  line-height: 1.35;
+}
+
+.banner-actions {
+  display: flex;
+  gap: 8px;
 }
 
 .banner.error {

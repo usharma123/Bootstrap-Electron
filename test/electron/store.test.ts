@@ -7,6 +7,21 @@ describe("renderer event reducer", () => {
     expect(key).toBe("foo|-|-|-|-")
   })
 
+  it("includes nested item identifiers in event keys", () => {
+    const key = eventKey({
+      method: "item.started",
+      params: {
+        notification: "item.started",
+        item: {
+          itemId: "item-1",
+          threadId: "thread-1",
+          turnId: "turn-1",
+        },
+      },
+    })
+    expect(key).toBe("item.started|thread-1|turn-1|item-1|-")
+  })
+
   it("handles item started, delta, completed", () => {
     let state = createInitialState("/tmp/work")
 
@@ -48,6 +63,83 @@ describe("renderer event reducer", () => {
     expect(timeline).toHaveLength(1)
     expect(timeline[0].content).toBe("hello")
     expect(timeline[0].completed).toBeTrue()
+  })
+
+  it("does not dedupe repeated item.delta events", () => {
+    let state = createInitialState("/tmp/work")
+
+    state = reduceEvent(state, {
+      method: "item.started",
+      params: {
+        notification: "item.started",
+        item: {
+          itemId: "item-1",
+          threadId: "thread-1",
+          turnId: "turn-1",
+          type: "assistant_message",
+        },
+      },
+    })
+
+    state = reduceEvent(state, {
+      method: "item.delta",
+      params: {
+        notification: "item.delta",
+        itemId: "item-1",
+        threadId: "thread-1",
+        turnId: "turn-1",
+        delta: "a",
+      },
+    })
+
+    state = reduceEvent(state, {
+      method: "item.delta",
+      params: {
+        notification: "item.delta",
+        itemId: "item-1",
+        threadId: "thread-1",
+        turnId: "turn-1",
+        delta: "a",
+      },
+    })
+
+    const timeline = state.timelines["thread-1"]
+    expect(timeline).toHaveLength(1)
+    expect(timeline[0].content).toBe("aa")
+  })
+
+  it("does not collapse distinct item.started events", () => {
+    let state = createInitialState("/tmp/work")
+
+    state = reduceEvent(state, {
+      method: "item.started",
+      params: {
+        notification: "item.started",
+        item: {
+          itemId: "item-1",
+          threadId: "thread-1",
+          turnId: "turn-1",
+          type: "assistant_message",
+        },
+      },
+    })
+
+    state = reduceEvent(state, {
+      method: "item.started",
+      params: {
+        notification: "item.started",
+        item: {
+          itemId: "item-2",
+          threadId: "thread-1",
+          turnId: "turn-1",
+          type: "assistant_message",
+        },
+      },
+    })
+
+    expect(state.timelines["thread-1"]).toHaveLength(2)
+    expect(state.timelines["thread-1"][0].itemId).toBe("item-1")
+    expect(state.timelines["thread-1"][1].itemId).toBe("item-2")
   })
 
   it("handles thread created and ignores duplicate or invalid thread ids", () => {

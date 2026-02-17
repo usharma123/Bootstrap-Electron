@@ -31,8 +31,15 @@ export function App() {
     return Boolean(state.activeTurns[state.selectedThreadID])
   })
 
+  function harness() {
+    return window.bootstrapHarness
+  }
+
   async function hydrateThread(threadId: string) {
-    const payload = await window.bootstrapHarness.getThread(threadId)
+    const bridge = harness()
+    if (!bridge) throw new Error("Preload bridge unavailable")
+
+    const payload = await bridge.getThread(threadId)
     const replay: HarnessEvent[] = payload.events.map((event) => {
       const notification = String(event.notification ?? "")
       return {
@@ -43,12 +50,19 @@ export function App() {
 
     api.setTimeline(threadId, [])
     for (const event of replay) {
+      const notification = event.method
+      // Replay is historical; only live notifications should control active turn state.
+      if (notification === "turn.started" || notification === "turn.completed" || notification === "turn.error") {
+        continue
+      }
       api.apply(event)
     }
   }
 
   async function bootstrap() {
     api.setStatus("loading")
+    const bridge = harness()
+    if (!bridge) throw new Error("Preload bridge unavailable")
 
     const persisted = localStorage.getItem(STORAGE_KEY)
     if (persisted) {
@@ -61,7 +75,7 @@ export function App() {
         if (decoded.workspace) {
           setWorkspaceInput(decoded.workspace)
           api.setWorkspace(decoded.workspace)
-          await window.bootstrapHarness.setWorkspace(decoded.workspace)
+          await bridge.setWorkspace(decoded.workspace)
         }
         if (decoded.view) api.setView(decoded.view)
         if (decoded.selectedThreadID) api.setSelectedThread(decoded.selectedThreadID)
@@ -70,8 +84,8 @@ export function App() {
       }
     }
 
-    await window.bootstrapHarness.initialize()
-    const threads = await window.bootstrapHarness.listThreads()
+    await bridge.initialize()
+    const threads = await bridge.listThreads()
     api.setThreads(threads)
 
     const targetThread =
@@ -89,39 +103,77 @@ export function App() {
   async function handleSetWorkspace() {
     const target = workspaceInput().trim()
     if (!target) return
-    await window.bootstrapHarness.setWorkspace(target)
-    api.hardReset(target)
-    const threads = await window.bootstrapHarness.listThreads()
-    api.setThreads(threads)
-    if (threads[0]) {
-      api.setSelectedThread(threads[0].threadId)
-      await hydrateThread(threads[0].threadId)
+    const bridge = harness()
+    if (!bridge) return
+
+    try {
+      await bridge.setWorkspace(target)
+      api.hardReset(target)
+      const threads = await bridge.listThreads()
+      api.setThreads(threads)
+      if (threads[0]) {
+        api.setSelectedThread(threads[0].threadId)
+        await hydrateThread(threads[0].threadId)
+      }
+      api.setStatus("ready")
+    } catch (error) {
+      api.setStatus("error")
+      api.setWarning(error instanceof Error ? error.message : "Failed to set workspace")
     }
-    api.setStatus("ready")
   }
 
   async function handleCreateThread() {
-    const created = await window.bootstrapHarness.createThread({ directory: state.workspace })
-    api.setThreads([created, ...state.threads.filter((thread) => thread.threadId !== created.threadId)])
-    api.setSelectedThread(created.threadId)
-    api.setTimeline(created.threadId, [])
+    const bridge = harness()
+    if (!bridge) return
+
+    try {
+      const created = await bridge.createThread({ directory: state.workspace })
+      api.setThreads([created, ...state.threads.filter((thread) => thread.threadId !== created.threadId)])
+      api.setSelectedThread(created.threadId)
+      api.setTimeline(created.threadId, [])
+    } catch (error) {
+      api.setWarning(error instanceof Error ? error.message : "Failed to create thread")
+    }
   }
 
   async function handleSelectThread(thread: HarnessThread) {
-    api.setSelectedThread(thread.threadId)
-    await hydrateThread(thread.threadId)
+    try {
+      api.setSelectedThread(thread.threadId)
+      await hydrateThread(thread.threadId)
+    } catch (error) {
+      api.setWarning(error instanceof Error ? error.message : "Failed to load thread")
+    }
   }
 
   async function handleSend() {
     const text = composerText().trim()
-    if (!text || !state.selectedThreadID || isTurnActive()) return
+    if (!text || isTurnActive()) return
 
-    const threadId = state.selectedThreadID
+    const bridge = harness()
+    if (!bridge) {
+      api.setWarning("Preload bridge unavailable")
+      return
+    }
+
+    let threadId = state.selectedThreadID
+    if (!threadId) {
+      try {
+        const created = await bridge.createThread({ directory: state.workspace })
+        api.setThreads([created, ...state.threads.filter((thread) => thread.threadId !== created.threadId)])
+        api.setSelectedThread(created.threadId)
+        api.setTimeline(created.threadId, [])
+        threadId = created.threadId
+      } catch (error) {
+        api.setWarning(error instanceof Error ? error.message : "Failed to create thread")
+        return
+      }
+    }
+
     api.addOptimisticUserItem(threadId, text)
     setComposerText("")
 
     try {
-      const started = await window.bootstrapHarness.startTurn({ threadId, text })
+      const started = await bridge.startTurn({ threadId, text })
       api.markOptimisticTurn(threadId, started.turnId)
     } catch (error) {
       api.setWarning(error instanceof Error ? error.message : "Failed to start turn")
@@ -130,24 +182,51 @@ export function App() {
 
   async function handleCancel() {
     if (!state.selectedThreadID || !isTurnActive()) return
-    await window.bootstrapHarness.cancelTurn(state.selectedThreadID)
+    const bridge = harness()
+    if (!bridge) return
+    await bridge.cancelTurn(state.selectedThreadID)
   }
 
   async function handleApprovalDecision(requestId: string, decision: "once" | "always" | "reject") {
     try {
-      await window.bootstrapHarness.respondApproval({ requestId, decision })
+      const bridge = harness()
+      if (!bridge) return
+      await bridge.respondApproval({ requestId, decision })
     } catch (error) {
       api.setWarning(error instanceof Error ? error.message : "Failed to send approval decision")
     }
   }
 
+  async function handleReconnect() {
+    try {
+      const bridge = harness()
+      if (!bridge) {
+        api.setBanner("Preload bridge unavailable. Restart the app.")
+        return
+      }
+      api.setStatus("loading")
+      api.setBanner(undefined)
+      await bridge.reconnect()
+      await bootstrap()
+    } catch (error) {
+      api.setStatus("error")
+      api.setBanner(error instanceof Error ? error.message : "Reconnect failed")
+    }
+  }
+
   onMount(() => {
+    if (!harness()) {
+      api.setStatus("error")
+      api.setBanner("Desktop bridge failed to load. Restart the app.")
+      return
+    }
+
     bootstrap().catch((error) => {
       api.setStatus("error")
       api.setBanner(error instanceof Error ? error.message : "Failed to initialize app")
     })
 
-    const unsubscribe = window.bootstrapHarness.subscribe((event) => {
+    const unsubscribe = harness()!.subscribe((event) => {
       api.apply(event)
     })
 
@@ -239,7 +318,14 @@ export function App() {
         </Show>
 
         <Show when={state.banner}>
-          <div class="banner error">{state.banner}</div>
+          <div class="banner error">
+            <div class="banner-content">{state.banner}</div>
+            <div class="banner-actions">
+              <button class="ghost" onClick={() => void handleReconnect()}>
+                Reconnect
+              </button>
+            </div>
+          </div>
         </Show>
         <Show when={state.warning}>
           <div class="banner warning">{state.warning}</div>
@@ -248,12 +334,13 @@ export function App() {
         <Show when={state.view === "thread"}>
           <footer class="composer">
             <textarea
+              autofocus
               value={composerText()}
               onInput={(event: InputEvent & { currentTarget: HTMLTextAreaElement }) =>
                 setComposerText(event.currentTarget.value)
               }
-              disabled={isTurnActive() || !state.selectedThreadID}
-              placeholder={state.selectedThreadID ? "Message Bootstrap harness" : "Create or select a thread"}
+              disabled={isTurnActive()}
+              placeholder={state.selectedThreadID ? "Message Bootstrap harness" : "Type a message to start a new thread"}
               rows={3}
               onKeyDown={(event: KeyboardEvent) => {
                 if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
@@ -301,6 +388,28 @@ function TimelineCard(props: {
   item: TimelineItem
   onApproval: (requestId: string, decision: "once" | "always" | "reject") => void
 }) {
+  const tone =
+    props.item.type === "user_message"
+      ? "tone-user"
+      : props.item.type === "assistant_message"
+        ? "tone-assistant"
+        : props.item.type === "tool_exec" || props.item.type === "tool_log"
+          ? "tone-tool"
+          : props.item.type === "approval"
+            ? "tone-approval"
+            : "tone-default"
+
+  const heading =
+    props.item.type === "user_message"
+      ? "You"
+      : props.item.type === "assistant_message"
+        ? "Assistant"
+        : props.item.type === "tool_exec" || props.item.type === "tool_log"
+          ? "Tool"
+          : props.item.type === "approval"
+            ? "Approval"
+            : props.item.type.replaceAll("_", " ")
+
   const requestId =
     typeof props.item.data?.requestId === "string"
       ? props.item.data.requestId
@@ -309,9 +418,9 @@ function TimelineCard(props: {
         : undefined
 
   return (
-    <article class={`timeline-card ${props.item.type}`}>
+    <article class={`timeline-card ${tone} ${props.item.type}`}>
       <header>
-        <span>{props.item.type.replaceAll("_", " ")}</span>
+        <span>{heading}</span>
         <span>{props.item.completed ? "done" : "live"}</span>
       </header>
       <pre>{props.item.content || JSON.stringify(props.item.data ?? {}, null, 2)}</pre>

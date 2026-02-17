@@ -1,12 +1,8 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process"
+import { existsSync } from "node:fs"
 import path from "node:path"
-import { fileURLToPath } from "node:url"
 import { JsonRpcClient } from "./jsonrpc-client"
 import type { HarnessEvent, HarnessRequestMap, HarnessMethod } from "./types"
-
-const __filename = fileURLToPath(import.meta.url)
-const __dirname = path.dirname(__filename)
-const repoRoot = path.resolve(__dirname, "../../")
 
 type BridgeState = "idle" | "starting" | "ready" | "error"
 
@@ -16,6 +12,7 @@ export class HarnessBridge {
   private state: BridgeState = "idle"
   private workspace = process.cwd()
   private readonly eventHandlers = new Set<(event: HarnessEvent) => void>()
+  private stderrBuffer = ""
 
   getWorkspace() {
     return this.workspace
@@ -36,10 +33,19 @@ export class HarnessBridge {
     await this.restartChild()
   }
 
+  async reconnect() {
+    await this.restartChild()
+  }
+
   async request<K extends HarnessMethod>(method: K, params?: HarnessRequestMap[K]["params"]) {
     await this.ensureStarted()
     if (!this.client) throw new Error("Harness bridge unavailable")
-    return (await this.client.request(this.toRpcMethod(method), (params ?? {}) as Record<string, unknown>)) as HarnessRequestMap[K]["result"]
+    const timeoutMs = this.timeoutForMethod(method)
+    return (await this.client.request(
+      this.toRpcMethod(method),
+      (params ?? {}) as Record<string, unknown>,
+      timeoutMs,
+    )) as HarnessRequestMap[K]["result"]
   }
 
   dispose() {
@@ -57,15 +63,20 @@ export class HarnessBridge {
 
   private async startChild() {
     this.state = "starting"
+    this.stderrBuffer = ""
 
     const command = this.resolveHarnessCommand(this.workspace)
     const child = spawn(command.bin, command.args, {
-      cwd: repoRoot,
+      cwd: process.cwd(),
       stdio: "pipe",
       env: {
         ...process.env,
         FORCE_COLOR: "0",
       },
+    })
+
+    child.stderr.on("data", (chunk: Buffer | string) => {
+      this.stderrBuffer = `${this.stderrBuffer}${chunk.toString()}`.slice(-4000)
     })
 
     child.on("error", (error) => {
@@ -81,6 +92,7 @@ export class HarnessBridge {
         params: {
           code: code ?? -1,
           signal: signal ?? "unknown",
+          stderr: this.stderrBuffer,
         },
       })
     })
@@ -92,10 +104,17 @@ export class HarnessBridge {
     })
 
     try {
-      await this.client.request("initialize", {})
+      await this.client.request("initialize", {}, 10000)
       this.state = "ready"
     } catch (error) {
       this.state = "error"
+      this.emit({
+        method: "harness.crash",
+        params: {
+          message: error instanceof Error ? error.message : String(error),
+          stderr: this.stderrBuffer,
+        },
+      })
       throw error
     }
   }
@@ -107,7 +126,17 @@ export class HarnessBridge {
   }
 
   private resolveHarnessCommand(workspace: string) {
-    const bunPath = process.env.BUN_BINARY ?? "bun"
+    const home = process.env.HOME ?? ""
+    const bunCandidates = [
+      process.env.BUN_BINARY,
+      process.env.BUN,
+      path.join(home, ".bun", "bin", "bun"),
+      "/opt/homebrew/bin/bun",
+      "/usr/local/bin/bun",
+      "bun",
+    ].filter((value): value is string => Boolean(value))
+
+    const bunPath = bunCandidates.find((candidate) => candidate === "bun" || existsSync(candidate)) ?? "bun"
     return {
       bin: bunPath,
       args: ["run", "--conditions=browser", "./src/index.ts", "harness", "--cwd", workspace],
@@ -132,6 +161,25 @@ export class HarnessBridge {
         return "approval.respond"
       case "setWorkspace":
         return "initialize"
+    }
+  }
+
+  private timeoutForMethod(method: HarnessMethod) {
+    switch (method) {
+      case "initialize":
+      case "threadList":
+      case "threadCreate":
+      case "threadGet":
+      case "setWorkspace":
+      case "reconnect":
+        return 10000
+      case "approvalRespond":
+      case "turnCancel":
+        return 15000
+      case "turnStart":
+        return 30000
+      default:
+        return 15000
     }
   }
 }

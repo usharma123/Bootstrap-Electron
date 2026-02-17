@@ -1,0 +1,4 @@
+{"notification":"turn.started","turnId":"ses_c6d2e9bc6001U94CcBnuxHGu7B","threadId":"ses_39331c725ffebUTlmwS0MNbsVQ","time":1771358297030,"timestamp":1771358297030}
+{"notification":"item.started","item":{"itemId":"itm_c6d2e9bc7001O4kDWRw3fyXe6T","threadId":"ses_39331c725ffebUTlmwS0MNbsVQ","turnId":"ses_c6d2e9bc6001U94CcBnuxHGu7B","type":"user_message","data":{"parts":[{"type":"text","text":"hi"}]}},"timestamp":1771358297031}
+{"notification":"item.completed","itemId":"itm_c6d2e9bc7001O4kDWRw3fyXe6T","threadId":"ses_39331c725ffebUTlmwS0MNbsVQ","turnId":"ses_c6d2e9bc6001U94CcBnuxHGu7B","timestamp":1771358297031}
+{"notification":"item.started","item":{"itemId":"itm_c6d2ea980002elTWUB4EEgGGJi","threadId":"ses_39331c725ffebUTlmwS0MNbsVQ","turnId":"ses_c6d2e9bc6001U94CcBnuxHGu7B","type":"assistant_message","data":{"partId":"prt_c6d2ea980001UD5SjCCn6x0dxQ","reasoning":true}},"timestamp":1771358300544}

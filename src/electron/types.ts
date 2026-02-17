@@ -42,6 +42,7 @@ export interface ApprovalInput {
 export interface HarnessRequestMap {
   initialize: { params?: Record<string, never>; result: HarnessInitializeResult }
   setWorkspace: { params: { directory: string }; result: { ok: boolean; directory: string } }
+  reconnect: { params?: Record<string, never>; result: { ok: boolean } }
   threadList: { params?: Record<string, never>; result: { threads: HarnessThread[] } }
   threadCreate: { params: { title?: string; directory?: string }; result: { thread: HarnessThread } }
   threadGet: { params: { threadId: string }; result: HarnessThreadWithEvents }
@@ -68,6 +69,7 @@ export interface HarnessEvent {
 export interface BootstrapHarnessAPI {
   initialize(): Promise<HarnessInitializeResult>
   setWorkspace(directory: string): Promise<void>
+  reconnect(): Promise<void>
   listThreads(): Promise<HarnessThread[]>
   createThread(input: { title?: string; directory?: string }): Promise<HarnessThread>
   getThread(threadId: string): Promise<HarnessThreadWithEvents>

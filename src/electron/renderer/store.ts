@@ -45,22 +45,28 @@ export function createInitialState(workspace: string): AppState {
 
 export function eventKey(event: HarnessEvent) {
   const params = event.params ?? {}
-  const itemId = typeof params.itemId === "string" ? params.itemId : "-"
-  const turnId = typeof params.turnId === "string" ? params.turnId : "-"
-  const threadId = typeof params.threadId === "string" ? params.threadId : "-"
+  const item = (params.item ?? {}) as Record<string, unknown>
+  const itemId =
+    typeof params.itemId === "string" ? params.itemId : typeof item.itemId === "string" ? item.itemId : "-"
+  const turnId =
+    typeof params.turnId === "string" ? params.turnId : typeof item.turnId === "string" ? item.turnId : "-"
+  const threadId =
+    typeof params.threadId === "string" ? params.threadId : typeof item.threadId === "string" ? item.threadId : "-"
   const timestamp = typeof params.timestamp === "number" ? params.timestamp : "-"
   return [event.method, threadId, turnId, itemId, timestamp].join("|")
 }
 
 export function reduceEvent(state: AppState, event: HarnessEvent): AppState {
-  const key = eventKey(event)
-  if (state.processedEventKeys[key]) return state
-
   const params = event.params ?? {}
   const notification = typeof params.notification === "string" ? params.notification : event.method
+  const shouldDedupe = notification !== "item.delta"
+  const key = shouldDedupe ? eventKey(event) : ""
+  if (shouldDedupe && state.processedEventKeys[key]) return state
   const next = {
     ...state,
-    processedEventKeys: { ...state.processedEventKeys, [key]: true },
+    processedEventKeys: shouldDedupe
+      ? { ...state.processedEventKeys, [key]: true }
+      : state.processedEventKeys,
   }
 
   if (notification === "thread.created") {
@@ -193,7 +199,10 @@ export function reduceEvent(state: AppState, event: HarnessEvent): AppState {
   }
 
   if (notification === "harness.crash") {
-    next.banner = "Harness process stopped. Reconnect by re-selecting workspace."
+    const message = typeof params.message === "string" ? params.message : "Harness process stopped"
+    const stderr = typeof params.stderr === "string" ? params.stderr.trim() : ""
+    const detail = stderr ? `${message}: ${stderr.slice(0, 400)}` : message
+    next.banner = `${detail}. Use Reconnect to restore the session.`
     next.status = "error"
     return next
   }
