@@ -22,6 +22,7 @@ import { AttachCommand } from "./cli/cmd/tui/attach"
 import { TuiThreadCommand } from "./cli/cmd/tui/thread"
 import { TuiSpawnCommand } from "./cli/cmd/tui/spawn"
 import { AcpCommand } from "./cli/cmd/acp"
+import { HarnessCommand } from "./cli/cmd/harness"
 import { EOL } from "os"
 import { WebCommand } from "./cli/cmd/web"
 import { PrCommand } from "./cli/cmd/pr"
@@ -78,6 +79,7 @@ const cli = yargs(hideBin(process.argv))
   .usage("\n" + UI.logo())
   .completion("completion", "generate shell completion script")
   .command(AcpCommand)
+  .command(HarnessCommand)
   .command(McpCommand)
   .command(TuiThreadCommand)
   .command(TuiSpawnCommand)
