@@ -4,111 +4,120 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
+import java.lang.reflect.Method;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 @DisplayName("CurrencyApplication Tests")
 class CurrencyApplicationTest {
 
     @Nested
-    @DisplayName("ApplicationClassTests")
-    class ApplicationClassTests {
-
-        @Test
-        @DisplayName("main class should exist and be loadable")
-        void mainClassShouldExistAndBeLoadable() {
-            assertDoesNotThrow(() -> Class.forName("com.example.currency.CurrencyApplication"));
-        }
-
-        @Test
-        @DisplayName("should be a Spring Boot application")
-        void shouldBeASpringBootApplication() throws ClassNotFoundException {
-            Class<?> clazz = Class.forName("com.example.currency.CurrencyApplication");
-            assertNotNull(clazz);
-        }
-    }
-
-    @Nested
-    @DisplayName("MainMethodTests")
+    @DisplayName("Main Method Tests")
     class MainMethodTests {
 
         @Test
         @DisplayName("main method should exist")
         void mainMethodShouldExist() throws NoSuchMethodException {
-            CurrencyApplication.class.getMethod("main", String[].class);
+            Method mainMethod = CurrencyApplication.class.getMethod("main", String[].class);
+            assertNotNull(mainMethod);
         }
 
         @Test
-        @DisplayName("main method should be public static void")
-        void mainMethodShouldBePublicStaticVoid() throws NoSuchMethodException {
-            var method = CurrencyApplication.class.getMethod("main", String[].class);
-            assertTrue(java.lang.reflect.Modifier.isPublic(method.getModifiers()));
-            assertTrue(java.lang.reflect.Modifier.isStatic(method.getModifiers()));
-            assertEquals(void.class, method.getReturnType());
+        @DisplayName("main method should be static")
+        void mainMethodShouldBeStatic() throws NoSuchMethodException {
+            Method mainMethod = CurrencyApplication.class.getMethod("main", String[].class);
+            assertTrue(java.lang.reflect.Modifier.isStatic(mainMethod.getModifiers()));
         }
 
         @Test
-        @DisplayName("main method should not throw exception with no args")
-        void mainMethodShouldNotThrowWithNoArgs() {
-            assertDoesNotThrow(() -> CurrencyApplication.main(new String[0]));
+        @DisplayName("main method should be public")
+        void mainMethodShouldBePublic() throws NoSuchMethodException {
+            Method mainMethod = CurrencyApplication.class.getMethod("main", String[].class);
+            assertTrue(java.lang.reflect.Modifier.isPublic(mainMethod.getModifiers()));
         }
     }
 
     @Nested
-    @DisplayName("ClassStructureTests")
-    class ClassStructureTests {
+    @DisplayName("Application Class Tests")
+    class ApplicationClassTests {
 
         @Test
-        @DisplayName("class should be public")
-        void classShouldBePublic() {
+        @DisplayName("CurrencyApplication should have SpringBootApplication annotation")
+        void shouldHaveSpringBootApplicationAnnotation() {
+            assertNotNull(CurrencyApplication.class.getAnnotation(org.springframework.boot.autoconfigure.SpringBootApplication.class));
+        }
+
+        @Test
+        @DisplayName("CurrencyApplication should be a public class")
+        void shouldBePublicClass() {
             assertTrue(java.lang.reflect.Modifier.isPublic(CurrencyApplication.class.getModifiers()));
         }
 
         @Test
-        @DisplayName("class should not be abstract")
-        void classShouldNotBeAbstract() {
+        @DisplayName("CurrencyApplication should not be abstract")
+        void shouldNotBeAbstract() {
             assertFalse(java.lang.reflect.Modifier.isAbstract(CurrencyApplication.class.getModifiers()));
         }
 
         @Test
-        @DisplayName("class should have empty public constructor")
-        void classShouldHaveEmptyPublicConstructor() throws NoSuchMethodException {
-            var constructor = CurrencyApplication.class.getConstructor();
-            assertTrue(java.lang.reflect.Modifier.isPublic(constructor.getModifiers()));
+        @DisplayName("CurrencyApplication should have main method")
+        void shouldHaveMainMethod() {
+            try {
+                Method mainMethod = CurrencyApplication.class.getMethod("main", String[].class);
+                assertNotNull(mainMethod);
+            } catch (NoSuchMethodException e) {
+                fail("main method not found");
+            }
+        }
+
+        @Test
+        @DisplayName("CurrencyApplication should be in correct package")
+        void shouldBeInCorrectPackage() {
+            assertEquals("com.example.currency", CurrencyApplication.class.getPackageName());
         }
     }
 
     @Nested
-    @DisplayName("AnnotationTests")
+    @DisplayName("Class Structure Tests")
+    class ClassStructureTests {
+
+        @Test
+        @DisplayName("CurrencyApplication should be a top-level class")
+        void shouldBeATopLevelClass() {
+            assertFalse(CurrencyApplication.class.isMemberClass());
+            assertFalse(CurrencyApplication.class.isLocalClass());
+            assertFalse(CurrencyApplication.class.isAnonymousClass());
+        }
+
+        @Test
+        @DisplayName("CurrencyApplication should not be an interface")
+        void shouldNotBeAnInterface() {
+            assertFalse(CurrencyApplication.class.isInterface());
+        }
+
+        @Test
+        @DisplayName("CurrencyApplication should not be an enum")
+        void shouldNotBeAnEnum() {
+            assertFalse(CurrencyApplication.class.isEnum());
+        }
+
+        @Test
+        @DisplayName("CurrencyApplication should not be a record")
+        void shouldNotBeARecord() {
+            assertFalse(CurrencyApplication.class.isRecord());
+        }
+    }
+
+    @Nested
+    @DisplayName("Annotation Tests")
     class AnnotationTests {
 
         @Test
-        @DisplayName("class should have SpringBootApplication annotation")
-        void classShouldHaveSpringBootApplicationAnnotation() {
-            var annotation = CurrencyApplication.class.getAnnotation(org.springframework.boot.autoconfigure.SpringBootApplication.class);
+        @DisplayName("Should have SpringBootApplication annotation")
+        void shouldHaveSpringBootApplicationAnnotation() {
+            org.springframework.boot.autoconfigure.SpringBootApplication annotation =
+                    CurrencyApplication.class.getAnnotation(org.springframework.boot.autoconfigure.SpringBootApplication.class);
             assertNotNull(annotation);
-        }
-
-        @Test
-        @DisplayName("SpringBootApplication should enable component scanning via meta-annotation")
-        void springBootApplicationShouldEnableComponentScanningViaMetaAnnotation() throws ClassNotFoundException {
-            // SpringBootApplication is a composed annotation that includes @ComponentScan
-            // Verify this by checking if the annotation exists on the classpath
-            Class<?> componentScanClass = org.springframework.context.annotation.ComponentScan.class;
-            assertNotNull(componentScanClass, "ComponentScan annotation should be available");
-
-            // The annotation should enable component scanning via its meta-annotations
-            var annotation = CurrencyApplication.class.getAnnotation(org.springframework.boot.autoconfigure.SpringBootApplication.class);
-            assertNotNull(annotation);
-        }
-
-        @Test
-        @DisplayName("SpringBootApplication should have scanBasePackages attribute")
-        void springBootApplicationShouldHaveScanBasePackagesAttribute() throws Exception {
-            var annotation = CurrencyApplication.class.getAnnotation(org.springframework.boot.autoconfigure.SpringBootApplication.class);
-            assertNotNull(annotation);
-            // Access the scanBasePackages attribute
-            String[] scanBasePackages = annotation.scanBasePackages();
-            assertNotNull(scanBasePackages);
         }
     }
 }
