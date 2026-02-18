@@ -9,8 +9,9 @@
 
 import * as fs from "fs"
 import * as path from "path"
-import type { ClassCoverage, AggregateCoverage, AggregateTestResults, TestMethod, ProductionClass, ProductionMethod } from "./quality-parsers"
+import type { ClassCoverage, AggregateCoverage, AggregateTestResults, TestMethod, ProductionClass, ProductionMethod, CoverageIntegrityResult, ChangedCodeCoverage, TestToClassMap } from "./quality-parsers"
 import { scanTestSourceFiles, scanProductionSourceFiles } from "./quality-parsers"
+import type { MerkleTreeDiff } from "./quality-fingerprint"
 
 // ============================================================================
 // Types
@@ -60,6 +61,8 @@ export interface QualityConfig {
   gates: {
     min_line_coverage: number
     min_branch_coverage: number
+    min_new_code_line_coverage: number
+    min_new_code_branch_coverage: number
     max_test_drop: number
     max_test_drop_percent?: number // Optional: percentage-based test drop tolerance
     max_slow_test_ms: number
@@ -111,6 +114,11 @@ export interface QualityDiff {
   testMethodsAdded: { className: string; methods: string[] }[]
   testFilesRemoved: string[]
   testFilesAdded: string[]
+
+  // Coverage detection levels (Levels 1-3)
+  coverageIntegrity?: CoverageIntegrityResult
+  changedCodeCoverage?: ChangedCodeCoverage
+  testToClassMap?: TestToClassMap
 }
 
 export interface GateResult {
@@ -126,6 +134,8 @@ const DEFAULT_CONFIG: QualityConfig = {
   gates: {
     min_line_coverage: 70,
     min_branch_coverage: 60,
+    min_new_code_line_coverage: 80,
+    min_new_code_branch_coverage: 60,
     max_test_drop: 0,
     max_test_drop_percent: 5, // Allow up to 5% test count drop by default
     max_slow_test_ms: 5000,
@@ -320,7 +330,15 @@ export async function createBaseline(
 // Diff Calculation
 // ============================================================================
 
-export function computeDiff(current: QualityBaseline, previous: QualityBaseline | null, config: QualityConfig): QualityDiff {
+export function computeDiff(
+  current: QualityBaseline,
+  previous: QualityBaseline | null,
+  config: QualityConfig,
+  merkleDiff?: MerkleTreeDiff | null,
+  coverageIntegrity?: CoverageIntegrityResult | null,
+  changedCodeCoverage?: ChangedCodeCoverage | null,
+  testToClassMap?: TestToClassMap | null,
+): QualityDiff {
   const warnings: QualityWarning[] = []
 
   if (!previous) {
@@ -464,27 +482,57 @@ export function computeDiff(current: QualityBaseline, previous: QualityBaseline 
     })
   }
 
-  // Calculate adjusted coverage when tests are deleted AND coverage also dropped
-  // If tests were deleted but coverage stayed stable, assume refactoring (don't penalize)
+  // Calculate adjusted coverage when tests are deleted.
+  //
+  // Key insight: JaCoCo measures which production lines are *executed*, not which
+  // lines are *intentionally tested*. When a dedicated test file is deleted, other
+  // tests (e.g., controller integration tests) may still exercise the same code paths.
+  // JaCoCo reports identical coverage, but the test suite is now fragile — those
+  // classes are only "incidentally covered" and will lose coverage if the remaining
+  // tests change.
+  //
+  // Strategy:
+  // - When Merkle diff confirms test file deletions: ALWAYS apply adjusted coverage,
+  //   regardless of whether raw JaCoCo coverage dropped. Stable raw coverage after
+  //   test deletion means incidental coverage, not safety.
+  // - When no Merkle diff (V1 fallback): only penalize if coverage dropped >5%,
+  //   since without per-file data we can't distinguish refactoring from deletion.
   let adjustedCoverage: QualityDiff["adjustedCoverage"] = undefined
-  const coverageDropThreshold = -5 // Only penalize if coverage dropped by more than 5%
+  const merkleConfirmsFileDeletions = merkleDiff && merkleDiff.testFiles.deleted.length > 0
 
   if (testsDelta < 0 && previous.metrics.totalTests > 0) {
     const testRetentionRatio = current.metrics.totalTests / previous.metrics.totalTests
-    const coverageAlsoDropped = coverageDelta.line < coverageDropThreshold
+    const coverageAlsoDropped = coverageDelta.line < -5
 
-    if (coverageAlsoDropped) {
-      // Tests deleted AND coverage dropped = real test deletion, apply penalty
+    // Apply penalty when EITHER: Merkle confirms file deletions, OR coverage dropped >5%
+    const shouldPenalize = merkleConfirmsFileDeletions || coverageAlsoDropped
+
+    if (shouldPenalize) {
+      const deletedFileNames = merkleDiff?.testFiles.deleted.map((f) => {
+        const base = f.split("/").pop() || f
+        return base.replace(/\.(java|kt)$/, "")
+      }) ?? []
+
+      // Build the reason string based on what we know
+      let reason: string
+      if (merkleConfirmsFileDeletions && !coverageAlsoDropped) {
+        reason = `${merkleDiff!.testFiles.deleted.length} test file(s) deleted (${deletedFileNames.join(", ")}). Raw coverage stable at ${current.metrics.coverage.line.percent.toFixed(1)}% — classes are now only incidentally covered by other tests`
+      } else if (merkleConfirmsFileDeletions && coverageAlsoDropped) {
+        reason = `${merkleDiff!.testFiles.deleted.length} test file(s) deleted (${deletedFileNames.join(", ")}) AND coverage dropped ${Math.abs(coverageDelta.line).toFixed(1)}%`
+      } else {
+        reason = `${Math.abs(testsDelta)} tests deleted AND coverage dropped ${Math.abs(coverageDelta.line).toFixed(1)}%`
+      }
+
       adjustedCoverage = {
         line: current.metrics.coverage.line.percent * testRetentionRatio,
         branch: current.metrics.coverage.branch.percent * testRetentionRatio,
         instruction: current.metrics.coverage.instruction.percent * testRetentionRatio,
         testRetentionRatio,
-        penalty: `${(testRetentionRatio * 100).toFixed(1)}% of raw coverage`,
-        reason: `${Math.abs(testsDelta)} tests deleted AND coverage dropped ${Math.abs(coverageDelta.line).toFixed(1)}%`,
+        penalty: `${(testRetentionRatio * 100).toFixed(1)}% of raw coverage (${current.metrics.totalTests}/${previous.metrics.totalTests} tests retained)`,
+        reason,
       }
 
-      // Add critical warning when adjusted coverage drops significantly
+      // Critical warning when adjusted coverage crosses below the gate
       if (adjustedCoverage.line < config.gates.min_line_coverage && current.metrics.coverage.line.percent >= config.gates.min_line_coverage) {
         warnings.push({
           level: "critical",
@@ -493,13 +541,25 @@ export function computeDiff(current: QualityBaseline, previous: QualityBaseline 
           details: `Raw coverage ${current.metrics.coverage.line.percent.toFixed(1)}% penalized by test deletion ratio (${(testRetentionRatio * 100).toFixed(1)}%)`,
         })
       }
+
+      // Specific warning when Merkle confirms deletions but raw coverage is stable
+      // (this is the "incidental coverage masking" scenario)
+      if (merkleConfirmsFileDeletions && !coverageAlsoDropped) {
+        warnings.push({
+          level: "warning",
+          code: "INCIDENTAL_COVERAGE_MASKING",
+          message: `${merkleDiff!.testFiles.deleted.length} test file(s) deleted but raw coverage unchanged at ${current.metrics.coverage.line.percent.toFixed(1)}%`,
+          details: `Deleted: ${deletedFileNames.join(", ")}. These classes are now only incidentally covered by other tests (e.g., controller/integration tests that happen to exercise the same code paths). This makes the test suite fragile — if those other tests change, coverage will drop unexpectedly. Consider restoring dedicated unit tests.`,
+        })
+      }
     } else {
-      // Tests deleted but coverage stable = likely refactoring, just warn
+      // Tests dropped (count-based) but no Merkle confirmation of file deletion
+      // and coverage is stable — likely test consolidation/refactoring
       warnings.push({
         level: "info",
         code: "TESTS_REFACTORED",
-        message: `${Math.abs(testsDelta)} tests removed but coverage stable - likely refactoring`,
-        details: `Coverage changed only ${coverageDelta.line.toFixed(1)}%. If tests were intentionally removed, update baseline.`,
+        message: `${Math.abs(testsDelta)} tests removed but coverage stable — likely test consolidation`,
+        details: `Coverage changed only ${coverageDelta.line.toFixed(1)}%. If tests were intentionally consolidated, update baseline.`,
       })
     }
   }
@@ -532,6 +592,50 @@ export function computeDiff(current: QualityBaseline, previous: QualityBaseline 
     })
   }
 
+  // Level 1: Coverage integrity warnings
+  if (coverageIntegrity && coverageIntegrity.issues.length > 0) {
+    for (const issue of coverageIntegrity.issues) {
+      const status = issue.isNowIncidental ? "INCIDENTAL" : "REDUCED"
+      const covStr = issue.jacocoLineCoverage !== null ? `${issue.jacocoLineCoverage.toFixed(1)}%` : "N/A"
+      warnings.push({
+        level: issue.severity,
+        code: "DEDICATED_TEST_LOST",
+        message: `${issue.productionClass} lost its dedicated test (${issue.deletedTestFile})`,
+        details: `JaCoCo line: ${covStr}, status: ${status}${issue.remainingTestFiles.length > 0 ? `, still covered by: ${issue.remainingTestFiles.join(", ")}` : ""}`,
+      })
+    }
+  }
+
+  // Level 2: Changed code coverage warnings
+  if (changedCodeCoverage) {
+    for (const cls of changedCodeCoverage.classes) {
+      if (cls.line === null) {
+        warnings.push({
+          level: "info",
+          code: "CHANGED_CODE_NO_COVERAGE_DATA",
+          message: `Changed class ${cls.className} has no JaCoCo coverage data`,
+        })
+      } else if (cls.line.percent < 50) {
+        warnings.push({
+          level: "warning",
+          code: "CHANGED_CODE_LOW_COVERAGE",
+          message: `Changed class ${cls.className} has only ${cls.line.percent.toFixed(1)}% line coverage`,
+        })
+      }
+    }
+  }
+
+  // Populate test file changes from Merkle diff when available (more reliable than baseline comparison)
+  const testFilesRemoved: string[] = merkleDiff?.testFiles.deleted.map((f) => {
+    const base = f.split("/").pop() || f
+    return base.replace(/\.(java|kt)$/, "")
+  }) ?? []
+
+  const testFilesAdded: string[] = merkleDiff?.testFiles.added.map((f) => {
+    const base = f.split("/").pop() || f
+    return base.replace(/\.(java|kt)$/, "")
+  }) ?? []
+
   return {
     testsDelta,
     testsRemoved,
@@ -543,8 +647,11 @@ export function computeDiff(current: QualityBaseline, previous: QualityBaseline 
     warnings,
     testMethodsRemoved: [],
     testMethodsAdded: [],
-    testFilesRemoved: [],
-    testFilesAdded: [],
+    testFilesRemoved,
+    testFilesAdded,
+    coverageIntegrity: coverageIntegrity ?? undefined,
+    changedCodeCoverage: changedCodeCoverage ?? undefined,
+    testToClassMap: testToClassMap ?? undefined,
   }
 }
 
@@ -773,7 +880,7 @@ export function computeProductionSourceDiff(
 // Gate Evaluation
 // ============================================================================
 
-export function evaluateGates(current: QualityBaseline, diff: QualityDiff, config: QualityConfig, previousTestCount?: number): GateResult {
+export function evaluateGates(current: QualityBaseline, diff: QualityDiff, config: QualityConfig, previousTestCount?: number, changedCodeCoverage?: ChangedCodeCoverage | null): GateResult {
   const failures: string[] = []
 
   // Use adjusted coverage if tests were deleted, otherwise use raw coverage
@@ -820,6 +927,21 @@ export function evaluateGates(current: QualityBaseline, diff: QualityDiff, confi
     if (exceedsAbsolute && exceedsPercentage) {
       failures.push(
         `Test count dropped by ${absoluteDrop} (${percentageDrop.toFixed(1)}%) - exceeds both absolute (${absoluteThreshold}) and percentage (${percentageThreshold}%) limits`
+      )
+    }
+  }
+
+  // Changed-code coverage gates (Level 2)
+  if (changedCodeCoverage && changedCodeCoverage.classesWithData > 0) {
+    if (changedCodeCoverage.aggregate.line.percent < config.gates.min_new_code_line_coverage) {
+      failures.push(
+        `Changed-code line coverage ${changedCodeCoverage.aggregate.line.percent.toFixed(1)}% < ${config.gates.min_new_code_line_coverage}% gate`,
+      )
+    }
+    const totalBranch = changedCodeCoverage.aggregate.branch.covered + changedCodeCoverage.aggregate.branch.missed
+    if (totalBranch > 0 && changedCodeCoverage.aggregate.branch.percent < config.gates.min_new_code_branch_coverage) {
+      failures.push(
+        `Changed-code branch coverage ${changedCodeCoverage.aggregate.branch.percent.toFixed(1)}% < ${config.gates.min_new_code_branch_coverage}% gate`,
       )
     }
   }
