@@ -21,6 +21,9 @@ import {
   parseSurefireDirectory,
   aggregateCoverage,
   detectIncidentalCoverage,
+  buildTestToClassMap,
+  verifyCoverageIntegrity,
+  computeChangedCodeCoverage,
   findJacocoCsv,
   findSurefireDir,
   findTestSourceDir,
@@ -33,6 +36,9 @@ import {
   type IncidentalCoverage,
   type TestMethod,
   type ProductionClass,
+  type TestToClassMap,
+  type CoverageIntegrityResult,
+  type ChangedCodeCoverage,
 } from "./quality-parsers"
 
 import {
@@ -57,6 +63,8 @@ import {
   computeFingerprint,
   saveFingerprint,
   loadFingerprint,
+  type MerkleTreeDiff,
+  type InputFingerprintV2,
 } from "./quality-fingerprint"
 
 // ============================================================================
@@ -85,6 +93,7 @@ export interface StalenessCheck {
   fingerprint?: {
     used: boolean
     reasons: string[]
+    treeDiff: MerkleTreeDiff | null
   }
 }
 
@@ -139,6 +148,9 @@ function generateReport(
   gitChanges?: GitTestChanges | null,
   testExecution?: TestExecutionResult | null,
   staleness?: StalenessCheck | null,
+  coverageIntegrity?: CoverageIntegrityResult | null,
+  changedCodeCoverage?: ChangedCodeCoverage | null,
+  testToClassMap?: TestToClassMap | null,
 ): string {
   const lines: string[] = []
 
@@ -197,6 +209,58 @@ function generateReport(
     }
   }
 
+  // Source Changes Detected (Merkle tree diff)
+  const treeDiff = staleness?.fingerprint?.treeDiff
+  if (treeDiff) {
+    const hasTestChanges =
+      treeDiff.testFiles.added.length > 0 ||
+      treeDiff.testFiles.deleted.length > 0 ||
+      treeDiff.testFiles.modified.length > 0
+    const hasMainChanges =
+      treeDiff.mainFiles.added.length > 0 ||
+      treeDiff.mainFiles.deleted.length > 0 ||
+      treeDiff.mainFiles.modified.length > 0
+
+    if (hasTestChanges || hasMainChanges) {
+      lines.push("## Source Changes Detected")
+      lines.push("")
+
+      if (hasTestChanges) {
+        lines.push("**Test sources:**")
+        for (const f of treeDiff.testFiles.deleted) {
+          lines.push(`- DELETED: \`${f}\``)
+        }
+        for (const f of treeDiff.testFiles.added) {
+          lines.push(`- ADDED: \`${f}\``)
+        }
+        for (const f of treeDiff.testFiles.modified) {
+          lines.push(`- MODIFIED: \`${f}\``)
+        }
+        if (treeDiff.testFiles.unchanged > 0) {
+          lines.push(`- ${treeDiff.testFiles.unchanged} file(s) unchanged`)
+        }
+        lines.push("")
+      }
+
+      if (hasMainChanges) {
+        lines.push("**Main sources:**")
+        for (const f of treeDiff.mainFiles.deleted) {
+          lines.push(`- DELETED: \`${f}\``)
+        }
+        for (const f of treeDiff.mainFiles.added) {
+          lines.push(`- ADDED: \`${f}\``)
+        }
+        for (const f of treeDiff.mainFiles.modified) {
+          lines.push(`- MODIFIED: \`${f}\``)
+        }
+        if (treeDiff.mainFiles.unchanged > 0) {
+          lines.push(`- ${treeDiff.mainFiles.unchanged} file(s) unchanged`)
+        }
+        lines.push("")
+      }
+    }
+  }
+
   // Summary Table
   lines.push("## Summary")
   lines.push("")
@@ -249,16 +313,32 @@ function generateReport(
 
   // Adjusted coverage explanation
   if (hasAdjustedCoverage && diff.adjustedCoverage) {
-    lines.push("### ⚠️ Coverage Adjusted")
+    lines.push("### Coverage Adjusted")
     lines.push("")
     lines.push(`**${diff.adjustedCoverage.reason}**`)
     lines.push("")
     lines.push(`- Raw coverage (JaCoCo): ${formatPercent(baseline.metrics.coverage.line.percent)}`)
     lines.push(`- Test retention ratio: ${(diff.adjustedCoverage.testRetentionRatio * 100).toFixed(1)}%`)
-    lines.push(`- Adjusted coverage: ${formatPercent(baseline.metrics.coverage.line.percent)} × ${(diff.adjustedCoverage.testRetentionRatio * 100).toFixed(1)}% = **${formatPercent(diff.adjustedCoverage.line)}**`)
+    lines.push(`- Adjusted coverage: ${formatPercent(baseline.metrics.coverage.line.percent)} x ${(diff.adjustedCoverage.testRetentionRatio * 100).toFixed(1)}% = **${formatPercent(diff.adjustedCoverage.line)}**`)
     lines.push("")
-    lines.push("> Coverage penalized because raw coverage doesn't reflect deleted tests.")
-    lines.push("> If deleted tests were redundant, consider updating the baseline.")
+
+    // Explain WHY raw coverage can stay the same after test deletion
+    const rawStable = Math.abs(baseline.metrics.coverage.line.percent - (diff.adjustedCoverage.line / diff.adjustedCoverage.testRetentionRatio)) < 2
+    if (rawStable && diff.testFilesRemoved && diff.testFilesRemoved.length > 0) {
+      lines.push("> **Why is raw coverage still high?** JaCoCo measures which production code lines are")
+      lines.push("> *executed*, not which lines are *intentionally tested*. Other tests (e.g., controller")
+      lines.push("> integration tests) still exercise the same code paths, so JaCoCo reports identical")
+      lines.push("> coverage. But these classes are now only \"incidentally covered\" — if those other")
+      lines.push("> tests change, coverage will drop without warning.")
+      lines.push(">")
+      lines.push(`> Classes that lost dedicated tests: **${diff.testFilesRemoved.join(", ")}**`)
+      lines.push(">")
+      lines.push("> **Action:** Restore dedicated unit tests, or if deletion was intentional,")
+      lines.push("> update the baseline with \`update_baseline: true\`.")
+    } else {
+      lines.push("> Coverage penalized because raw JaCoCo numbers don't reflect deleted tests.")
+      lines.push("> If deleted tests were truly redundant, update the baseline.")
+    }
     lines.push("")
   }
 
@@ -288,6 +368,78 @@ function generateReport(
         ? `, ${formatPercent(inc.coverage.branch.percent)} branch coverage`
         : ""
       lines.push(`- **${inc.className}** - ${formatPercent(inc.coverage.line.percent)} line coverage${branchInfo}`)
+    }
+    lines.push("")
+  }
+
+  // Coverage Integrity (Level 1) — Classes that lost dedicated tests
+  if (coverageIntegrity && coverageIntegrity.issues.length > 0) {
+    lines.push("## Coverage Integrity")
+    lines.push("")
+    lines.push("Classes that lost their dedicated test file:")
+    lines.push("")
+    lines.push("| Class | Deleted Test | JaCoCo Line | Status | Remaining Coverage |")
+    lines.push("|-------|-------------|-------------|--------|--------------------|")
+
+    for (const issue of coverageIntegrity.issues) {
+      const covStr = issue.jacocoLineCoverage !== null ? formatPercent(issue.jacocoLineCoverage) : "N/A"
+      const status = issue.isNowIncidental ? "INCIDENTAL" : issue.remainingTestFiles.length > 0 ? "INDIRECT" : "UNCOVERED"
+      const remaining = issue.remainingTestFiles.length > 0 ? issue.remainingTestFiles.join(", ") : "None"
+      lines.push(`| ${issue.productionClass} | ${issue.deletedTestFile} | ${covStr} | ${status} | ${remaining} |`)
+    }
+
+    lines.push("")
+    lines.push(`**Summary:** ${coverageIntegrity.classesAffected} class(es) affected, ${coverageIntegrity.classesNowIncidental} now incidental, ${coverageIntegrity.classesStillDirectlyTested} still directly tested`)
+    lines.push("")
+  }
+
+  // Coverage on Changed Code (Level 2) — Coverage for changed/added files
+  if (changedCodeCoverage && changedCodeCoverage.classes.length > 0) {
+    const config = loadConfig(projectPath)
+    lines.push("## Coverage on Changed Code")
+    lines.push("")
+    lines.push(`| Class | Change | Line | Branch | Gate (${config.gates.min_new_code_line_coverage}%) |`)
+    lines.push("|-------|--------|------|--------|------|")
+
+    for (const cls of changedCodeCoverage.classes) {
+      const lineStr = cls.line !== null ? formatPercent(cls.line.percent) : "N/A"
+      const branchStr = cls.branch !== null ? formatPercent(cls.branch.percent) : "N/A"
+      const gateStatus = cls.line !== null
+        ? cls.line.percent >= config.gates.min_new_code_line_coverage ? "PASS" : "FAIL"
+        : "N/A"
+      lines.push(`| ${cls.className} | ${cls.changeType} | ${lineStr} | ${branchStr} | ${gateStatus} |`)
+    }
+
+    if (changedCodeCoverage.classesWithData > 0) {
+      const aggLine = formatPercent(changedCodeCoverage.aggregate.line.percent)
+      const totalBranch = changedCodeCoverage.aggregate.branch.covered + changedCodeCoverage.aggregate.branch.missed
+      const aggBranch = totalBranch > 0 ? formatPercent(changedCodeCoverage.aggregate.branch.percent) : "N/A"
+      lines.push(`| **Aggregate** | - | **${aggLine}** | **${aggBranch}** | ${changedCodeCoverage.aggregate.line.percent >= config.gates.min_new_code_line_coverage ? "PASS" : "FAIL"} |`)
+    }
+
+    if (changedCodeCoverage.classesWithoutData > 0) {
+      lines.push("")
+      lines.push(`> ${changedCodeCoverage.classesWithoutData} changed class(es) have no JaCoCo coverage data`)
+    }
+    lines.push("")
+  }
+
+  // Test Coverage Map (Level 3) — Which test covers which class
+  if (testToClassMap && testToClassMap.size > 0) {
+    lines.push("## Test Coverage Map")
+    lines.push("")
+    lines.push("| Test File | Convention Target | Also Covers (Imports) |")
+    lines.push("|-----------|-------------------|----------------------|")
+
+    for (const [, mapping] of testToClassMap) {
+      const target = mapping.conventionTarget ?? "-"
+      const others = mapping.importedClasses
+        .filter((c) => c !== mapping.conventionTarget)
+        .slice(0, 5) // limit to avoid huge rows
+      const othersStr = others.length > 0
+        ? others.join(", ") + (mapping.importedClasses.length > 5 ? `, +${mapping.importedClasses.length - 5} more` : "")
+        : "-"
+      lines.push(`| ${mapping.testClassName} | ${target} | ${othersStr} |`)
     }
     lines.push("")
   }
@@ -451,32 +603,40 @@ function generateReport(
   }
 
   // Quality Gates (SonarQube-style detailed table)
-  const config = {
-    min_line_coverage: 70,
-    min_branch_coverage: 60,
-    max_test_drop: 0,
-    max_slow_test_ms: 5000,
-  }
-  
+  const gateConfig = loadConfig(projectPath)
+
   lines.push("## Quality Gates")
   lines.push("")
   lines.push("| Gate | Threshold | Actual | Status |")
   lines.push("|------|-----------|--------|--------|")
-  
-  const lineCovStatus = baseline.metrics.coverage.line.percent >= config.min_line_coverage ? "PASS" : "FAIL"
-  lines.push(`| Line Coverage | >= ${config.min_line_coverage}% | ${formatPercent(baseline.metrics.coverage.line.percent)} | ${lineCovStatus} |`)
-  
-  const branchCovStatus = baseline.metrics.coverage.branch.percent >= config.min_branch_coverage ? "PASS" : "FAIL"
-  lines.push(`| Branch Coverage | >= ${config.min_branch_coverage}% | ${formatPercent(baseline.metrics.coverage.branch.percent)} | ${branchCovStatus} |`)
-  
-  const testDropStatus = diff.testsDelta >= -config.max_test_drop ? "PASS" : "FAIL"
-  lines.push(`| Test Count Drop | <= ${config.max_test_drop} | ${diff.testsDelta} | ${testDropStatus} |`)
-  
+
+  const lineCovStatus = baseline.metrics.coverage.line.percent >= gateConfig.gates.min_line_coverage ? "PASS" : "FAIL"
+  lines.push(`| Line Coverage | >= ${gateConfig.gates.min_line_coverage}% | ${formatPercent(baseline.metrics.coverage.line.percent)} | ${lineCovStatus} |`)
+
+  const branchCovStatus = baseline.metrics.coverage.branch.percent >= gateConfig.gates.min_branch_coverage ? "PASS" : "FAIL"
+  lines.push(`| Branch Coverage | >= ${gateConfig.gates.min_branch_coverage}% | ${formatPercent(baseline.metrics.coverage.branch.percent)} | ${branchCovStatus} |`)
+
+  const testDropStatus = diff.testsDelta >= -gateConfig.gates.max_test_drop ? "PASS" : "FAIL"
+  lines.push(`| Test Count Drop | <= ${gateConfig.gates.max_test_drop} | ${diff.testsDelta} | ${testDropStatus} |`)
+
   const maxSlowTime = testResults.slowTests.length > 0 ? testResults.slowTests[0].time * 1000 : 0
-  const slowTestStatus = maxSlowTime <= config.max_slow_test_ms ? "PASS" : "FAIL"
-  lines.push(`| Max Slow Test | <= ${config.max_slow_test_ms}ms | ${maxSlowTime.toFixed(0)}ms | ${slowTestStatus} |`)
+  const slowTestStatus = maxSlowTime <= gateConfig.gates.max_slow_test_ms ? "PASS" : "FAIL"
+  lines.push(`| Max Slow Test | <= ${gateConfig.gates.max_slow_test_ms}ms | ${maxSlowTime.toFixed(0)}ms | ${slowTestStatus} |`)
+
+  // Changed-code coverage gates (Level 2)
+  if (changedCodeCoverage && changedCodeCoverage.classesWithData > 0) {
+    const chgLineStatus = changedCodeCoverage.aggregate.line.percent >= gateConfig.gates.min_new_code_line_coverage ? "PASS" : "FAIL"
+    lines.push(`| Changed-Code Line | >= ${gateConfig.gates.min_new_code_line_coverage}% | ${formatPercent(changedCodeCoverage.aggregate.line.percent)} | ${chgLineStatus} |`)
+
+    const totalBranch = changedCodeCoverage.aggregate.branch.covered + changedCodeCoverage.aggregate.branch.missed
+    if (totalBranch > 0) {
+      const chgBranchStatus = changedCodeCoverage.aggregate.branch.percent >= gateConfig.gates.min_new_code_branch_coverage ? "PASS" : "FAIL"
+      lines.push(`| Changed-Code Branch | >= ${gateConfig.gates.min_new_code_branch_coverage}% | ${formatPercent(changedCodeCoverage.aggregate.branch.percent)} | ${chgBranchStatus} |`)
+    }
+  }
+
   lines.push("")
-  
+
   lines.push(`**Overall: ${gateResult.passed ? "PASS" : "FAIL"}**`)
   lines.push("")
 
@@ -673,12 +833,16 @@ async function checkTestStaleness(
   // Layer 1: Fingerprint-based staleness detection (primary)
   // ========================================================================
 
-  const fingerprintResult = await checkFingerprintStaleness(projectPath, testSourceDir, mainSourceDir)
+  const storedFp = loadFingerprint(projectPath)
+  const fingerprintResult = await checkFingerprintStaleness(
+    projectPath, testSourceDir, mainSourceDir, storedFp,
+  )
 
   if (fingerprintResult) {
     result.fingerprint = {
       used: true,
       reasons: fingerprintResult.reasons,
+      treeDiff: fingerprintResult.treeDiff,
     }
 
     if (fingerprintResult.isStale) {
@@ -688,11 +852,20 @@ async function checkTestStaleness(
         result.reasons.push(`Fingerprint: ${reason}`)
       }
     }
+
+    // When tree diff is available, force re-run for test deletions/modifications
+    const treeDiff = fingerprintResult.treeDiff
+    if (treeDiff) {
+      if (treeDiff.testFiles.deleted.length > 0 || treeDiff.testFiles.modified.length > 0) {
+        result.mustRunTests = true
+      }
+    }
   } else {
     // No stored fingerprint - will rely on git + timestamp fallback
     result.fingerprint = {
       used: false,
       reasons: ["No stored fingerprint found - using fallback detection"],
+      treeDiff: null,
     }
   }
 
@@ -1254,6 +1427,54 @@ To generate artifacts, run:
     }
 
     // ========================================================================
+    // Phase 6.5: Build Test-to-Class Map (Level 3)
+    // ========================================================================
+
+    let testClassMap: TestToClassMap = new Map()
+    if (testSourceDir) {
+      // Collect production class names for filtering
+      const productionClassNames = new Set<string>()
+      for (const cls of coverageData) {
+        productionClassNames.add(cls.className)
+      }
+      // Also include classes from source scanning
+      if (mainSourceDir) {
+        const prodClasses = scanProductionSourceFiles(mainSourceDir)
+        for (const [, cls] of prodClasses) {
+          productionClassNames.add(cls.className)
+        }
+      }
+      testClassMap = buildTestToClassMap(testSourceDir, productionClassNames)
+    }
+
+    // ========================================================================
+    // Phase 6.6: Verify Coverage Integrity (Level 1)
+    // ========================================================================
+
+    const merkleDiff = staleness.fingerprint?.treeDiff ?? null
+    let coverageIntegrity: CoverageIntegrityResult | null = null
+    if (merkleDiff && merkleDiff.testFiles.deleted.length > 0) {
+      coverageIntegrity = verifyCoverageIntegrity(
+        merkleDiff.testFiles.deleted,
+        coverageData,
+        incidental,
+        testClassMap,
+      )
+    }
+
+    // ========================================================================
+    // Phase 6.7: Compute Changed Code Coverage (Level 2)
+    // ========================================================================
+
+    let changedCoverage: ChangedCodeCoverage | null = null
+    if (merkleDiff) {
+      const hasChangedMain = merkleDiff.mainFiles.modified.length > 0 || merkleDiff.mainFiles.added.length > 0
+      if (hasChangedMain && coverageData.length > 0) {
+        changedCoverage = computeChangedCodeCoverage(merkleDiff, coverageData)
+      }
+    }
+
+    // ========================================================================
     // Phase 7: Load Config and Baseline
     // ========================================================================
 
@@ -1401,7 +1622,10 @@ To generate artifacts, run:
       mainSourceDir || undefined,
     )
 
-    const diff = computeDiff(currentBaseline, previousBaseline, config)
+    const diff = computeDiff(
+      currentBaseline, previousBaseline, config, merkleDiff,
+      coverageIntegrity, changedCoverage, testClassMap.size > 0 ? testClassMap : null,
+    )
 
     // Merge source file warnings into diff
     diff.warnings = [...sourceFileWarnings, ...diff.warnings]
@@ -1418,7 +1642,7 @@ To generate artifacts, run:
     // Phase 12: Evaluate Gates
     // ========================================================================
 
-    const gateResult = evaluateGates(currentBaseline, diff, config, previousBaseline?.metrics.totalTests)
+    const gateResult = evaluateGates(currentBaseline, diff, config, previousBaseline?.metrics.totalTests, changedCoverage)
 
     // ========================================================================
     // Phase 13: Generate Report
@@ -1442,6 +1666,9 @@ To generate artifacts, run:
       gitChanges,
       testExecution,
       staleness,
+      coverageIntegrity,
+      changedCoverage,
+      testClassMap.size > 0 ? testClassMap : null,
     )
 
     // ========================================================================
@@ -1457,7 +1684,11 @@ To generate artifacts, run:
       saveBaseline(projectPath, currentBaseline)
 
       // Save fingerprint for next run's staleness detection
-      const fingerprint = await computeFingerprint(projectPath, testSourceDir, mainSourceDir)
+      const previousFp = loadFingerprint(projectPath)
+      const fingerprint = await computeFingerprint(
+        projectPath, testSourceDir, mainSourceDir,
+        previousFp?.version === 2 ? previousFp : null,
+      )
       saveFingerprint(projectPath, fingerprint)
     }
 
