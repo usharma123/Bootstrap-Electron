@@ -4,22 +4,30 @@ import com.example.currency.model.ConversionRequest;
 import com.example.currency.model.ConversionResponse;
 import com.example.currency.model.Currency;
 import com.example.currency.service.ExchangeRateService;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.http.MediaType;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
-import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.*;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @ExtendWith(MockitoExtension.class)
 @DisplayName("CurrencyController Tests")
 class CurrencyControllerTest {
+
+    private MockMvc mockMvc;
 
     @Mock
     private ExchangeRateService exchangeRateService;
@@ -27,159 +35,80 @@ class CurrencyControllerTest {
     @InjectMocks
     private CurrencyController controller;
 
-    @Nested
-    @DisplayName("ControllerInstantiationTests")
-    class ControllerInstantiationTests {
+    private ObjectMapper objectMapper;
 
-        @Test
-        @DisplayName("controller should be instantiable with ExchangeRateService")
-        void controllerShouldBeInstantiableWithExchangeRateService() {
-            assertNotNull(controller);
-        }
-
-        @Test
-        @DisplayName("controller should use injected ExchangeRateService")
-        void controllerShouldUseInjectedExchangeRateService() {
-            CurrencyController testController = new CurrencyController(exchangeRateService);
-            assertNotNull(testController);
-        }
-
-        @Test
-        @DisplayName("controller should accept null service without throwing")
-        void controllerShouldAcceptNullServiceWithoutThrowing() {
-            // Controller constructor accepts null without throwing
-            // NullPointerException would occur when methods are called
-            assertDoesNotThrow(() -> new CurrencyController(null));
-        }
+    @BeforeEach
+    void setUp() {
+        mockMvc = MockMvcBuilders.standaloneSetup(controller).build();
+        objectMapper = new ObjectMapper();
+        objectMapper.findAndRegisterModules();
     }
 
-    @Nested
-    @DisplayName("ConvertEndpointTests")
-    class ConvertEndpointTests {
+    @Test
+    @DisplayName("Should return successful conversion response")
+    void convert_Success() throws Exception {
+        ConversionRequest request = new ConversionRequest(100.0, Currency.USD, Currency.EUR);
+        ConversionResponse expectedResponse = new ConversionResponse(100.0, "USD", "EUR", 92.0, 0.92);
 
-        @Test
-        @DisplayName("convert should delegate to ExchangeRateService")
-        void convertShouldDelegateToExchangeRateService() {
-            ConversionRequest request = new ConversionRequest(100.0, Currency.USD, Currency.EUR);
-            ConversionResponse expectedResponse = new ConversionResponse(100.0, "USD", "EUR", 92.0, 0.92);
+        when(exchangeRateService.convert(any(ConversionRequest.class))).thenReturn(expectedResponse);
 
-            when(exchangeRateService.convert(any(ConversionRequest.class)))
-                .thenReturn(expectedResponse);
+        mockMvc.perform(post("/api/convert")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.amount").value(100.0))
+                .andExpect(jsonPath("$.from").value("USD"))
+                .andExpect(jsonPath("$.to").value("EUR"))
+                .andExpect(jsonPath("$.result").value(92.0))
+                .andExpect(jsonPath("$.rate").value(0.92));
 
-            ConversionResponse response = controller.convert(request);
+        verify(exchangeRateService).convert(any(ConversionRequest.class));
+    }
 
-            assertNotNull(response);
-            assertEquals(100.0, response.amount());
-            assertEquals("USD", response.from());
-            assertEquals("EUR", response.to());
-            assertEquals(92.0, response.result());
+    @Test
+    @DisplayName("Should call service with correct request")
+    void convert_PassesCorrectRequest() throws Exception {
+        ConversionRequest request = new ConversionRequest(50.0, Currency.GBP, Currency.JPY);
+        ConversionResponse response = new ConversionResponse(50.0, "GBP", "JPY", 9458.0, 189.16);
 
-            verify(exchangeRateService, times(1)).convert(request);
-        }
+        when(exchangeRateService.convert(any(ConversionRequest.class))).thenReturn(response);
 
-        @Test
-        @DisplayName("convert should return same response from service")
-        void convertShouldReturnSameResponseFromService() {
-            ConversionRequest request = new ConversionRequest(50.0, Currency.EUR, Currency.GBP);
-            ConversionResponse expectedResponse = new ConversionResponse(50.0, "EUR", "GBP", 42.93, 0.8586);
+        mockMvc.perform(post("/api/convert")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isOk());
 
-            when(exchangeRateService.convert(any(ConversionRequest.class)))
-                .thenReturn(expectedResponse);
+        verify(exchangeRateService).convert(request);
+    }
 
-            ConversionResponse response = controller.convert(request);
+    @Test
+    @DisplayName("Should handle same currency conversion")
+    void convert_SameCurrency() throws Exception {
+        ConversionRequest request = new ConversionRequest(200.0, Currency.CAD, Currency.CAD);
+        ConversionResponse response = new ConversionResponse(200.0, "CAD", "CAD", 200.0, 1.0);
 
-            assertEquals(expectedResponse, response);
-        }
+        when(exchangeRateService.convert(any(ConversionRequest.class))).thenReturn(response);
 
-        @Test
-        @DisplayName("convert should pass through all request fields")
-        void convertShouldPassThroughAllRequestFields() {
-            ConversionRequest request = new ConversionRequest(75.5, Currency.JPY, Currency.CHF);
-            ConversionResponse expectedResponse = new ConversionResponse(75.5, "JPY", "CHF", 0.44, 0.0058);
+        mockMvc.perform(post("/api/convert")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result").value(200.0))
+                .andExpect(jsonPath("$.rate").value(1.0));
+    }
 
-            when(exchangeRateService.convert(any(ConversionRequest.class)))
-                .thenReturn(expectedResponse);
+    @Test
+    @DisplayName("Should return 200 for zero amount conversion")
+    void convert_ZeroAmount() throws Exception {
+        ConversionRequest request = new ConversionRequest(0.0, Currency.USD, Currency.EUR);
+        ConversionResponse response = new ConversionResponse(0.0, "USD", "EUR", 0.0, 0.92);
 
-            ConversionResponse response = controller.convert(request);
+        when(exchangeRateService.convert(any(ConversionRequest.class))).thenReturn(response);
 
-            assertEquals(75.5, response.amount());
-            assertEquals("JPY", response.from());
-            assertEquals("CHF", response.to());
-        }
-
-        @Test
-        @DisplayName("convert should handle zero amount")
-        void convertShouldHandleZeroAmount() {
-            ConversionRequest request = new ConversionRequest(0.0, Currency.USD, Currency.EUR);
-            ConversionResponse expectedResponse = new ConversionResponse(0.0, "USD", "EUR", 0.0, 0.92);
-
-            when(exchangeRateService.convert(any(ConversionRequest.class)))
-                .thenReturn(expectedResponse);
-
-            ConversionResponse response = controller.convert(request);
-
-            assertEquals(0.0, response.amount());
-            assertEquals(0.0, response.result());
-        }
-
-        @Test
-        @DisplayName("convert should handle same currency")
-        void convertShouldHandleSameCurrency() {
-            ConversionRequest request = new ConversionRequest(100.0, Currency.USD, Currency.USD);
-            ConversionResponse expectedResponse = new ConversionResponse(100.0, "USD", "USD", 100.0, 1.0);
-
-            when(exchangeRateService.convert(any(ConversionRequest.class)))
-                .thenReturn(expectedResponse);
-
-            ConversionResponse response = controller.convert(request);
-
-            assertEquals(100.0, response.result());
-            assertEquals(1.0, response.rate());
-        }
-
-        @Test
-        @DisplayName("convert should call service for all currency pairs")
-        void convertShouldCallServiceForAllCurrencyPairs() {
-            for (Currency from : Currency.values()) {
-                for (Currency to : Currency.values()) {
-                    ConversionRequest request = new ConversionRequest(100.0, from, to);
-                    ConversionResponse expectedResponse = new ConversionResponse(
-                        100.0, from.name(), to.name(), 100.0, 1.0);
-
-                    when(exchangeRateService.convert(any(ConversionRequest.class)))
-                        .thenReturn(expectedResponse);
-
-                    ConversionResponse response = controller.convert(request);
-
-                    verify(exchangeRateService, times(1)).convert(request);
-                }
-            }
-        }
-
-        @Test
-        @DisplayName("convert should propagate service exceptions")
-        void convertShouldPropagateServiceExceptions() {
-            ConversionRequest request = new ConversionRequest(100.0, Currency.USD, Currency.EUR);
-
-            when(exchangeRateService.convert(any(ConversionRequest.class)))
-                .thenThrow(new RuntimeException("Service error"));
-
-            assertThrows(RuntimeException.class, () -> controller.convert(request));
-        }
-
-        @Test
-        @DisplayName("convert should work with large decimal amounts")
-        void convertShouldWorkWithLargeDecimalAmounts() {
-            ConversionRequest request = new ConversionRequest(999999.99, Currency.GBP, Currency.JPY);
-            ConversionResponse expectedResponse = new ConversionResponse(
-                999999.99, "GBP", "JPY", 189246.22, 189.2464);
-
-            when(exchangeRateService.convert(any(ConversionRequest.class)))
-                .thenReturn(expectedResponse);
-
-            ConversionResponse response = controller.convert(request);
-
-            assertEquals(999999.99, response.amount());
-        }
+        mockMvc.perform(post("/api/convert")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result").value(0.0));
     }
 }
