@@ -1,16 +1,16 @@
 /**
- * Quality Fingerprint - Content-addressable staleness detection
+ * Quality Fingerprint - Merkle tree staleness detection
  *
- * Replaces timestamp-based staleness detection with fingerprints based on:
- * - Git commit SHA and dirty state
- * - Config file hashes (pom.xml, build.gradle)
- * - Source file metadata (mtime + size for speed)
+ * Uses a Merkle tree of content-hashed source files to detect exactly
+ * which files were added, deleted, or modified between runs.
  *
- * This handles edge cases that break timestamps:
- * - git checkout/rebase (resets mtimes)
- * - CI cache restore (unpredictable mtimes)
- * - touch commands (can game staleness)
- * - cross-device builds (different timestamp precision)
+ * V2 replaces the flat mtime:size fingerprint (V1) with:
+ * - Per-file SHA-256 content hashes (with mtime+size cache hints)
+ * - Directory nodes built bottom-up from sorted child hashes
+ * - O(n) tree diffing via fileIndex maps
+ * - Specific "file X deleted, file Y modified" reports
+ *
+ * Backward compatible: loads V1 fingerprints gracefully, saves V2.
  */
 
 import * as fs from "fs"
@@ -21,27 +21,85 @@ import * as crypto from "crypto"
 // Types
 // ============================================================================
 
-export interface InputFingerprint {
+export interface MerkleLeaf {
+  type: "file"
+  relativePath: string
+  contentHash: string
+  size: number
+  mtime: number // epoch ms
+}
+
+export interface MerkleNode {
+  type: "directory"
+  relativePath: string
+  hash: string
+  children: Record<string, MerkleLeaf | MerkleNode>
+}
+
+export interface MerkleTree {
+  rootHash: string
+  root: MerkleNode
+  fileCount: number
+  fileIndex: Record<string, string> // relativePath -> contentHash
+}
+
+export interface MerkleFileDiff {
+  added: string[]
+  deleted: string[]
+  modified: string[]
+  unchanged: number
+}
+
+export interface MerkleTreeDiff {
+  testFiles: MerkleFileDiff
+  mainFiles: MerkleFileDiff
+}
+
+// --- Fingerprint versions ---
+
+export interface InputFingerprintV1 {
   version: 1
-  timestamp: string // ISO timestamp for debugging
+  timestamp: string
 
   git: {
-    sha: string // git rev-parse HEAD
-    isDirty: boolean // has uncommitted changes
-    dirtyHash: string | null // hash of staged/unstaged changes
+    sha: string
+    isDirty: boolean
+    dirtyHash: string | null
   }
 
   configs: {
-    [filename: string]: string // SHA-256 hash of config files
+    [filename: string]: string
   }
 
   sources: {
-    testFingerprint: string // aggregated fingerprint of test sources
-    mainFingerprint: string // aggregated fingerprint of main sources
+    testFingerprint: string
+    mainFingerprint: string
     testFileCount: number
     mainFileCount: number
   }
 }
+
+export interface InputFingerprintV2 {
+  version: 2
+  timestamp: string
+
+  git: {
+    sha: string
+    isDirty: boolean
+    dirtyHash: string | null
+  }
+
+  configs: {
+    [filename: string]: string
+  }
+
+  sources: {
+    testTree: MerkleTree | null
+    mainTree: MerkleTree | null
+  }
+}
+
+export type InputFingerprint = InputFingerprintV1 | InputFingerprintV2
 
 export interface FingerprintComparisonResult {
   isStale: boolean
@@ -52,6 +110,7 @@ export interface FingerprintComparisonResult {
     configsChanged: string[]
     sourcesChanged: boolean
   }
+  treeDiff: MerkleTreeDiff | null
 }
 
 // ============================================================================
@@ -79,14 +138,10 @@ function hashFile(filePath: string): string | null {
   }
 }
 
-/**
- * Create a fast fingerprint for a file using mtime + size.
- * This is faster than hashing but still detects most changes.
- */
-function fileMetadataFingerprint(filePath: string): string | null {
+function hashFileContent(filePath: string): string | null {
   try {
-    const stat = fs.statSync(filePath)
-    return `${stat.mtime.getTime()}:${stat.size}`
+    const content = fs.readFileSync(filePath)
+    return crypto.createHash("sha256").update(content).digest("hex").substring(0, 16)
   } catch {
     return null
   }
@@ -113,7 +168,6 @@ async function getGitSha(cwd: string): Promise<string | null> {
 
 async function getGitDirtyState(cwd: string): Promise<{ isDirty: boolean; hash: string | null }> {
   try {
-    // Check for any changes (staged, unstaged, untracked)
     const statusProc = Bun.spawn(["git", "status", "--porcelain"], {
       cwd,
       stdout: "pipe",
@@ -128,7 +182,6 @@ async function getGitDirtyState(cwd: string): Promise<{ isDirty: boolean; hash: 
       return { isDirty: false, hash: null }
     }
 
-    // Get a hash of all changes for dirty state tracking
     const diffProc = Bun.spawn(["git", "diff", "HEAD"], {
       cwd,
       stdout: "pipe",
@@ -137,7 +190,6 @@ async function getGitDirtyState(cwd: string): Promise<{ isDirty: boolean; hash: 
     const diffOutput = await new Response(diffProc.stdout).text()
     await diffProc.exited
 
-    // Include status in the hash to catch untracked files
     const combinedOutput = statusOutput + "\n" + diffOutput
     const hash = hashString(combinedOutput)
 
@@ -148,21 +200,40 @@ async function getGitDirtyState(cwd: string): Promise<{ isDirty: boolean; hash: 
 }
 
 // ============================================================================
-// Source File Scanning
+// Merkle Tree Construction
 // ============================================================================
 
-interface FileFingerprints {
-  fingerprint: string
-  fileCount: number
-}
-
-function collectSourceFingerprints(
-  dir: string,
+/**
+ * Build a Merkle tree from files matching `pattern` under `rootDir`.
+ *
+ * Content-hashes each file (SHA-256, truncated to 16 hex chars).
+ * Uses mtime+size as a cache hint: if `previousTree` has the same
+ * mtime+size for a path, the stored hash is reused without re-reading.
+ *
+ * Directory nodes are built bottom-up by sorting child names and
+ * concatenating their hashes.
+ */
+export function buildMerkleTree(
+  rootDir: string,
   pattern: RegExp,
-  excludeDirs: string[] = ["target", "build", "node_modules", ".git"]
-): FileFingerprints {
-  const fingerprints: string[] = []
-  let fileCount = 0
+  previousTree?: MerkleTree | null,
+  excludeDirs: string[] = ["target", "build", "node_modules", ".git"],
+): MerkleTree | null {
+  if (!fs.existsSync(rootDir)) {
+    return null
+  }
+
+  const fileIndex: Record<string, string> = {}
+  const previousIndex = previousTree?.fileIndex ?? {}
+
+  // Collect all matching files with their metadata
+  interface FileEntry {
+    relativePath: string
+    fullPath: string
+    size: number
+    mtime: number
+  }
+  const files: FileEntry[] = []
 
   const scanDir = (currentDir: string): void => {
     try {
@@ -174,12 +245,16 @@ function collectSourceFingerprints(
           }
         } else if (entry.isFile() && pattern.test(entry.name)) {
           const fullPath = path.join(currentDir, entry.name)
-          const fp = fileMetadataFingerprint(fullPath)
-          if (fp) {
-            // Include relative path in fingerprint to detect file moves/renames
-            const relativePath = path.relative(dir, fullPath)
-            fingerprints.push(`${relativePath}:${fp}`)
-            fileCount++
+          try {
+            const stat = fs.statSync(fullPath)
+            files.push({
+              relativePath: path.relative(rootDir, fullPath),
+              fullPath,
+              size: stat.size,
+              mtime: stat.mtime.getTime(),
+            })
+          } catch {
+            // skip unreadable files
           }
         }
       }
@@ -188,15 +263,159 @@ function collectSourceFingerprints(
     }
   }
 
-  if (fs.existsSync(dir)) {
-    scanDir(dir)
+  scanDir(rootDir)
+
+  if (files.length === 0) {
+    return null
   }
 
-  // Sort for deterministic ordering, then hash the combined result
-  fingerprints.sort()
-  const combinedFingerprint = hashString(fingerprints.join("\n"))
+  // Hash each file, reusing cached hashes when mtime+size match
+  const leaves: MerkleLeaf[] = []
 
-  return { fingerprint: combinedFingerprint, fileCount }
+  for (const file of files) {
+    let contentHash: string | null = null
+
+    // Check cache: if previous tree has this path with same mtime+size, reuse hash
+    if (previousTree) {
+      const prevHash = previousIndex[file.relativePath]
+      if (prevHash) {
+        // Walk the previous tree to find the leaf and check mtime+size
+        const prevLeaf = findLeafInTree(previousTree.root, file.relativePath)
+        if (prevLeaf && prevLeaf.mtime === file.mtime && prevLeaf.size === file.size) {
+          contentHash = prevHash
+        }
+      }
+    }
+
+    if (!contentHash) {
+      contentHash = hashFileContent(file.fullPath)
+    }
+
+    if (contentHash) {
+      leaves.push({
+        type: "file",
+        relativePath: file.relativePath,
+        contentHash,
+        size: file.size,
+        mtime: file.mtime,
+      })
+      fileIndex[file.relativePath] = contentHash
+    }
+  }
+
+  // Build directory tree bottom-up
+  const root = buildDirectoryTree(leaves, "")
+
+  return {
+    rootHash: root.hash,
+    root,
+    fileCount: leaves.length,
+    fileIndex,
+  }
+}
+
+function findLeafInTree(node: MerkleNode, relativePath: string): MerkleLeaf | null {
+  const parts = relativePath.split(path.sep)
+
+  let current: MerkleNode | MerkleLeaf = node
+  for (const part of parts) {
+    if (current.type !== "directory") return null
+    const child = current.children[part]
+    if (!child) return null
+    current = child
+  }
+
+  return current.type === "file" ? current : null
+}
+
+function buildDirectoryTree(leaves: MerkleLeaf[], dirRelativePath: string): MerkleNode {
+  const children: Record<string, MerkleLeaf | MerkleNode> = {}
+
+  // Group leaves by their first path segment relative to this directory
+  const groups = new Map<string, MerkleLeaf[]>()
+
+  for (const leaf of leaves) {
+    const relativeToDir = dirRelativePath
+      ? leaf.relativePath.substring(dirRelativePath.length + 1)
+      : leaf.relativePath
+    const segments = relativeToDir.split(path.sep)
+
+    if (segments.length === 1) {
+      // Direct child file
+      children[segments[0]] = leaf
+    } else {
+      // Belongs in a subdirectory
+      const subDirName = segments[0]
+      if (!groups.has(subDirName)) {
+        groups.set(subDirName, [])
+      }
+      groups.get(subDirName)!.push(leaf)
+    }
+  }
+
+  // Recursively build subdirectory nodes
+  for (const [subDirName, subLeaves] of groups) {
+    const subDirPath = dirRelativePath ? `${dirRelativePath}${path.sep}${subDirName}` : subDirName
+    children[subDirName] = buildDirectoryTree(subLeaves, subDirPath)
+  }
+
+  // Compute directory hash from sorted children
+  const sortedNames = Object.keys(children).sort()
+  const hashInput = sortedNames
+    .map((name) => {
+      const child = children[name]
+      return child.type === "file" ? `${name}:${child.contentHash}` : `${name}:${child.hash}`
+    })
+    .join("\n")
+
+  return {
+    type: "directory",
+    relativePath: dirRelativePath,
+    hash: hashString(hashInput),
+    children,
+  }
+}
+
+// ============================================================================
+// Merkle Tree Diffing
+// ============================================================================
+
+/**
+ * O(n) comparison of two Merkle trees via their fileIndex maps.
+ * Returns lists of added, deleted, modified files and count of unchanged.
+ */
+export function diffMerkleTrees(
+  current: MerkleTree | null,
+  stored: MerkleTree | null,
+): MerkleFileDiff {
+  const added: string[] = []
+  const deleted: string[] = []
+  const modified: string[] = []
+  let unchanged = 0
+
+  const currentIndex = current?.fileIndex ?? {}
+  const storedIndex = stored?.fileIndex ?? {}
+
+  // Check all files in current tree
+  for (const [filePath, hash] of Object.entries(currentIndex)) {
+    const storedHash = storedIndex[filePath]
+    if (storedHash === undefined) {
+      added.push(filePath)
+    } else if (storedHash !== hash) {
+      modified.push(filePath)
+    } else {
+      unchanged++
+    }
+  }
+
+  // Check for files only in stored tree (deleted)
+  for (const filePath of Object.keys(storedIndex)) {
+    if (!(filePath in currentIndex)) {
+      deleted.push(filePath)
+    }
+  }
+
+  return { added, deleted, modified, unchanged }
 }
 
 // ============================================================================
@@ -205,12 +424,15 @@ function collectSourceFingerprints(
 
 /**
  * Compute the current input fingerprint for a project.
+ * When `previousFingerprint` (v2) is provided, reuses cached hashes
+ * for files whose mtime+size haven't changed.
  */
 export async function computeFingerprint(
   projectPath: string,
   testSourceDir: string | null,
-  mainSourceDir: string | null
-): Promise<InputFingerprint> {
+  mainSourceDir: string | null,
+  previousFingerprint?: InputFingerprintV2 | null,
+): Promise<InputFingerprintV2> {
   // Git state
   const gitSha = (await getGitSha(projectPath)) || "unknown"
   const dirtyState = await getGitDirtyState(projectPath)
@@ -227,18 +449,21 @@ export async function computeFingerprint(
     }
   }
 
-  // Source fingerprints
+  // Build Merkle trees
   const javaPattern = /\.java$|\.kt$/
-  const testFingerprints = testSourceDir
-    ? collectSourceFingerprints(testSourceDir, javaPattern)
-    : { fingerprint: "empty", fileCount: 0 }
+  const prevTestTree = previousFingerprint?.sources.testTree ?? null
+  const prevMainTree = previousFingerprint?.sources.mainTree ?? null
 
-  const mainFingerprints = mainSourceDir
-    ? collectSourceFingerprints(mainSourceDir, javaPattern)
-    : { fingerprint: "empty", fileCount: 0 }
+  const testTree = testSourceDir
+    ? buildMerkleTree(testSourceDir, javaPattern, prevTestTree)
+    : null
+
+  const mainTree = mainSourceDir
+    ? buildMerkleTree(mainSourceDir, javaPattern, prevMainTree)
+    : null
 
   return {
-    version: 1,
+    version: 2,
     timestamp: new Date().toISOString(),
     git: {
       sha: gitSha,
@@ -247,16 +472,15 @@ export async function computeFingerprint(
     },
     configs,
     sources: {
-      testFingerprint: testFingerprints.fingerprint,
-      mainFingerprint: mainFingerprints.fingerprint,
-      testFileCount: testFingerprints.fileCount,
-      mainFileCount: mainFingerprints.fileCount,
+      testTree,
+      mainTree,
     },
   }
 }
 
 /**
  * Load a stored fingerprint from disk.
+ * Handles both V1 and V2 formats.
  */
 export function loadFingerprint(projectPath: string): InputFingerprint | null {
   const fingerprintPath = getFingerprintPath(projectPath)
@@ -267,7 +491,7 @@ export function loadFingerprint(projectPath: string): InputFingerprint | null {
 
   try {
     const data = JSON.parse(fs.readFileSync(fingerprintPath, "utf-8"))
-    if (data.version === 1) {
+    if (data.version === 1 || data.version === 2) {
       return data as InputFingerprint
     }
     return null
@@ -292,10 +516,13 @@ export function saveFingerprint(projectPath: string, fingerprint: InputFingerpri
 
 /**
  * Compare two fingerprints to determine if artifacts are stale.
+ *
+ * When both are V2, produces a `treeDiff` with per-file detail.
+ * When either is V1, falls back to flat hash comparison.
  */
 export function compareFingerprints(
   current: InputFingerprint,
-  stored: InputFingerprint
+  stored: InputFingerprint,
 ): FingerprintComparisonResult {
   const reasons: string[] = []
   const details = {
@@ -315,7 +542,7 @@ export function compareFingerprints(
   if (current.git.isDirty !== stored.git.isDirty) {
     details.dirtyStateChanged = true
     reasons.push(
-      current.git.isDirty ? "Working directory now has uncommitted changes" : "Working directory is now clean"
+      current.git.isDirty ? "Working directory now has uncommitted changes" : "Working directory is now clean",
     )
   } else if (current.git.isDirty && current.git.dirtyHash !== stored.git.dirtyHash) {
     details.dirtyStateChanged = true
@@ -340,28 +567,60 @@ export function compareFingerprints(
     }
   }
 
-  // Check source fingerprints
-  if (
-    current.sources.testFingerprint !== stored.sources.testFingerprint ||
-    current.sources.mainFingerprint !== stored.sources.mainFingerprint
-  ) {
-    details.sourcesChanged = true
+  // Check sources — V2 vs V2 uses tree diffing, otherwise flat comparison
+  let treeDiff: MerkleTreeDiff | null = null
 
-    if (current.sources.testFingerprint !== stored.sources.testFingerprint) {
-      const fileDelta = current.sources.testFileCount - stored.sources.testFileCount
-      if (fileDelta !== 0) {
-        reasons.push(`Test sources changed (${fileDelta > 0 ? "+" : ""}${fileDelta} files)`)
-      } else {
-        reasons.push("Test sources modified")
+  if (current.version === 2 && stored.version === 2) {
+    const testDiff = diffMerkleTrees(current.sources.testTree, stored.sources.testTree)
+    const mainDiff = diffMerkleTrees(current.sources.mainTree, stored.sources.mainTree)
+
+    treeDiff = { testFiles: testDiff, mainFiles: mainDiff }
+
+    const testChanged = testDiff.added.length > 0 || testDiff.deleted.length > 0 || testDiff.modified.length > 0
+    const mainChanged = mainDiff.added.length > 0 || mainDiff.deleted.length > 0 || mainDiff.modified.length > 0
+
+    if (testChanged || mainChanged) {
+      details.sourcesChanged = true
+
+      if (testDiff.deleted.length > 0) {
+        const fileNames = testDiff.deleted.map((f) => path.basename(f, path.extname(f)))
+        reasons.push(`Test sources: ${testDiff.deleted.length} file(s) deleted (${fileNames.join(", ")})`)
+      }
+      if (testDiff.added.length > 0) {
+        const fileNames = testDiff.added.map((f) => path.basename(f, path.extname(f)))
+        reasons.push(`Test sources: ${testDiff.added.length} file(s) added (${fileNames.join(", ")})`)
+      }
+      if (testDiff.modified.length > 0) {
+        const fileNames = testDiff.modified.map((f) => path.basename(f, path.extname(f)))
+        reasons.push(`Test sources: ${testDiff.modified.length} file(s) modified (${fileNames.join(", ")})`)
+      }
+
+      if (mainDiff.deleted.length > 0) {
+        const fileNames = mainDiff.deleted.map((f) => path.basename(f, path.extname(f)))
+        reasons.push(`Main sources: ${mainDiff.deleted.length} file(s) deleted (${fileNames.join(", ")})`)
+      }
+      if (mainDiff.added.length > 0) {
+        const fileNames = mainDiff.added.map((f) => path.basename(f, path.extname(f)))
+        reasons.push(`Main sources: ${mainDiff.added.length} file(s) added (${fileNames.join(", ")})`)
+      }
+      if (mainDiff.modified.length > 0) {
+        const fileNames = mainDiff.modified.map((f) => path.basename(f, path.extname(f)))
+        reasons.push(`Main sources: ${mainDiff.modified.length} file(s) modified (${fileNames.join(", ")})`)
       }
     }
+  } else {
+    // V1 fallback — at least one side is V1
+    const currentSourceHash = getSourceHash(current)
+    const storedSourceHash = getSourceHash(stored)
 
-    if (current.sources.mainFingerprint !== stored.sources.mainFingerprint) {
-      const fileDelta = current.sources.mainFileCount - stored.sources.mainFileCount
-      if (fileDelta !== 0) {
-        reasons.push(`Main sources changed (${fileDelta > 0 ? "+" : ""}${fileDelta} files)`)
-      } else {
-        reasons.push("Main sources modified")
+    if (currentSourceHash.test !== storedSourceHash.test || currentSourceHash.main !== storedSourceHash.main) {
+      details.sourcesChanged = true
+
+      if (currentSourceHash.test !== storedSourceHash.test) {
+        reasons.push("Test sources changed (flat hash comparison)")
+      }
+      if (currentSourceHash.main !== storedSourceHash.main) {
+        reasons.push("Main sources changed (flat hash comparison)")
       }
     }
   }
@@ -372,7 +631,22 @@ export function compareFingerprints(
     details.configsChanged.length > 0 ||
     details.sourcesChanged
 
-  return { isStale, reasons, details }
+  return { isStale, reasons, details, treeDiff }
+}
+
+/**
+ * Extract comparable source hashes regardless of fingerprint version.
+ * Used for V1 fallback comparison.
+ */
+function getSourceHash(fp: InputFingerprint): { test: string; main: string } {
+  if (fp.version === 1) {
+    return { test: fp.sources.testFingerprint, main: fp.sources.mainFingerprint }
+  }
+  // V2: use rootHash from trees
+  return {
+    test: fp.sources.testTree?.rootHash ?? "empty",
+    main: fp.sources.mainTree?.rootHash ?? "empty",
+  }
 }
 
 /**
@@ -382,15 +656,16 @@ export function compareFingerprints(
 export async function checkFingerprintStaleness(
   projectPath: string,
   testSourceDir: string | null,
-  mainSourceDir: string | null
+  mainSourceDir: string | null,
+  previousFingerprint?: InputFingerprint | null,
 ): Promise<FingerprintComparisonResult | null> {
-  const stored = loadFingerprint(projectPath)
+  const stored = previousFingerprint !== undefined ? previousFingerprint : loadFingerprint(projectPath)
 
   if (!stored) {
-    // No stored fingerprint - can't determine staleness via fingerprint
     return null
   }
 
-  const current = await computeFingerprint(projectPath, testSourceDir, mainSourceDir)
+  const prevV2 = stored.version === 2 ? stored : null
+  const current = await computeFingerprint(projectPath, testSourceDir, mainSourceDir, prevV2)
   return compareFingerprints(current, stored)
 }

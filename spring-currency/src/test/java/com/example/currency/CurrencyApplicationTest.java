@@ -120,4 +120,26 @@ class CurrencyApplicationTest {
             assertNotNull(annotation);
         }
     }
+
+    @Nested
+    @DisplayName("Spring Context Tests")
+    class SpringContextTests {
+
+        @Test
+        @DisplayName("CurrencyApplication class should have SpringBootApplication annotation")
+        void shouldHaveSpringBootApplicationAnnotation() {
+            assertNotNull(CurrencyApplication.class.getAnnotation(org.springframework.boot.autoconfigure.SpringBootApplication.class));
+        }
+
+        @Test
+        @DisplayName("CurrencyApplication should have main method via reflection")
+        void shouldHaveMainMethodViaReflection() {
+            try {
+                var mainMethod = CurrencyApplication.class.getMethod("main", String[].class);
+                assertNotNull(mainMethod);
+            } catch (NoSuchMethodException e) {
+                fail("main method not found");
+            }
+        }
+    }
 }
