@@ -453,6 +453,54 @@ export function parseSurefireDirectory(dir: string): AggregateTestResults {
 // ============================================================================
 
 /**
+ * Extract all class names referenced in a source file via imports and code references.
+ * Shared by detectIncidentalCoverage and buildTestToClassMap.
+ */
+export function extractReferencedClasses(content: string): Set<string> {
+  const referenced = new Set<string>()
+
+  // Extract imports
+  const importRegex = /import\s+(?:static\s+)?([a-zA-Z_][a-zA-Z0-9_.]*)/g
+  let match
+  while ((match = importRegex.exec(content)) !== null) {
+    const importPath = match[1]
+    const className = importPath.split(".").pop()
+    if (className) {
+      referenced.add(className)
+    }
+  }
+
+  // Extract class references in code
+  const classRefRegex =
+    /\bnew\s+([A-Z][a-zA-Z0-9_]*)|([A-Z][a-zA-Z0-9_]*)\.(?:[a-z]|[A-Z])|@\w+\s+([A-Z][a-zA-Z0-9_]*)/g
+  while ((match = classRefRegex.exec(content)) !== null) {
+    const className = match[1] || match[2] || match[3]
+    if (className) {
+      referenced.add(className)
+    }
+  }
+
+  return referenced
+}
+
+/**
+ * Extract only imported class names from a source file.
+ */
+function extractImportedClasses(content: string): Set<string> {
+  const imported = new Set<string>()
+  const importRegex = /import\s+(?:static\s+)?([a-zA-Z_][a-zA-Z0-9_.]*)/g
+  let match
+  while ((match = importRegex.exec(content)) !== null) {
+    const importPath = match[1]
+    const className = importPath.split(".").pop()
+    if (className) {
+      imported.add(className)
+    }
+  }
+  return imported
+}
+
+/**
  * Detect classes covered but not directly referenced by any test file.
  */
 export function detectIncidentalCoverage(coverage: ClassCoverage[], testSourceDir: string): IncidentalCoverage[] {
@@ -466,25 +514,8 @@ export function detectIncidentalCoverage(coverage: ClassCoverage[], testSourceDi
   const referencedClasses = new Set<string>()
 
   for (const [, content] of testFileContents) {
-    // Extract imports
-    const importRegex = /import\s+(?:static\s+)?([a-zA-Z_][a-zA-Z0-9_.]*)/g
-    let match
-    while ((match = importRegex.exec(content)) !== null) {
-      const importPath = match[1]
-      const className = importPath.split(".").pop()
-      if (className) {
-        referencedClasses.add(className)
-      }
-    }
-
-    // Extract class references in code
-    const classRefRegex =
-      /\bnew\s+([A-Z][a-zA-Z0-9_]*)|([A-Z][a-zA-Z0-9_]*)\.(?:[a-z]|[A-Z])|@\w+\s+([A-Z][a-zA-Z0-9_]*)/g
-    while ((match = classRefRegex.exec(content)) !== null) {
-      const className = match[1] || match[2] || match[3]
-      if (className) {
-        referencedClasses.add(className)
-      }
+    for (const cls of extractReferencedClasses(content)) {
+      referencedClasses.add(cls)
     }
   }
 
@@ -820,4 +851,309 @@ export function scanProductionSourceFiles(mainSourceDir: string): Map<string, Pr
   }
 
   return classes
+}
+
+// ============================================================================
+// Level 3: Test-to-Class Coverage Map
+// ============================================================================
+
+export interface TestClassMapping {
+  testClassName: string
+  testFilePath: string
+  conventionTarget: string | null // FooTest → Foo
+  importedClasses: string[] // filtered to known production classes
+  referencedClasses: string[] // all production classes found via code refs
+  allCoveredClasses: string[] // union of convention + imports + references
+}
+
+export type TestToClassMap = Map<string, TestClassMapping>
+
+/**
+ * Build a map from each test class to the production classes it covers.
+ *
+ * Detection methods:
+ * 1. Naming convention: FooTest → Foo, FooTests → Foo
+ * 2. Import analysis: filter imports to known production class names
+ * 3. Reference analysis: new Foo(), Foo.method(), etc.
+ */
+export function buildTestToClassMap(
+  testSourceDir: string,
+  productionClassNames: Set<string>,
+): TestToClassMap {
+  const result: TestToClassMap = new Map()
+
+  if (!fs.existsSync(testSourceDir)) {
+    return result
+  }
+
+  const testFiles = new Map<string, string>()
+  collectTestFiles(testSourceDir, testFiles)
+
+  for (const [filePath, content] of testFiles) {
+    // Extract test class name from file
+    const testClassName = extractClassName(content)
+    if (!testClassName) continue
+
+    // 1. Naming convention: FooTest → Foo, FooTests → Foo
+    let conventionTarget: string | null = null
+    const conventionMatch = testClassName.match(/^(.+?)Tests?$/)
+    if (conventionMatch) {
+      const candidate = conventionMatch[1]
+      if (productionClassNames.has(candidate)) {
+        conventionTarget = candidate
+      }
+    }
+
+    // 2. Import analysis: filter to known production classes
+    const imported = extractImportedClasses(content)
+    const importedClasses = [...imported].filter(
+      (cls) => productionClassNames.has(cls) && cls !== testClassName,
+    )
+
+    // 3. Reference analysis: all referenced production classes
+    const allRefs = extractReferencedClasses(content)
+    const referencedClasses = [...allRefs].filter(
+      (cls) => productionClassNames.has(cls) && cls !== testClassName,
+    )
+
+    // Union of all covered classes
+    const allCovered = new Set<string>()
+    if (conventionTarget) allCovered.add(conventionTarget)
+    for (const cls of importedClasses) allCovered.add(cls)
+    for (const cls of referencedClasses) allCovered.add(cls)
+
+    result.set(testClassName, {
+      testClassName,
+      testFilePath: filePath,
+      conventionTarget,
+      importedClasses,
+      referencedClasses,
+      allCoveredClasses: [...allCovered],
+    })
+  }
+
+  return result
+}
+
+// ============================================================================
+// Level 1: Coverage Integrity Verification
+// ============================================================================
+
+export interface CoverageIntegrityIssue {
+  productionClass: string
+  deletedTestFile: string
+  jacocoLineCoverage: number | null // null if class not in JaCoCo data
+  isNowIncidental: boolean
+  remainingTestFiles: string[] // test files that still reference this class
+  severity: "critical" | "warning"
+}
+
+export interface CoverageIntegrityResult {
+  issues: CoverageIntegrityIssue[]
+  classesAffected: number
+  classesNowIncidental: number
+  classesStillDirectlyTested: number
+}
+
+/**
+ * Verify coverage integrity after test file deletions.
+ *
+ * For each deleted test file, determines:
+ * - Which production class lost its dedicated test (via naming convention + map)
+ * - Current JaCoCo coverage for that class
+ * - Whether it's now only incidentally covered
+ * - Which remaining test files still reference it
+ */
+export function verifyCoverageIntegrity(
+  deletedTestFiles: string[],
+  coverageData: ClassCoverage[],
+  incidentalCoverage: IncidentalCoverage[],
+  testToClassMap: TestToClassMap,
+): CoverageIntegrityResult {
+  const issues: CoverageIntegrityIssue[] = []
+  const incidentalClassNames = new Set(incidentalCoverage.map((ic) => ic.className))
+
+  // Build a coverage lookup by className
+  const coverageLookup = new Map<string, ClassCoverage>()
+  for (const cls of coverageData) {
+    coverageLookup.set(cls.className, cls)
+  }
+
+  for (const deletedFile of deletedTestFiles) {
+    // Extract test class name from file path: "ConversionResponseTest.java" → "ConversionResponseTest"
+    const base = deletedFile.split("/").pop() || deletedFile
+    const testClassName = base.replace(/\.(java|kt)$/, "")
+
+    // Determine which production class this test was for
+    const conventionMatch = testClassName.match(/^(.+?)Tests?$/)
+    const conventionTarget = conventionMatch ? conventionMatch[1] : null
+
+    // Also check what the test-to-class map knew about this test (if it was mapped before deletion)
+    const mapping = testToClassMap.get(testClassName)
+    const coveredClasses = mapping?.allCoveredClasses ?? []
+
+    // The primary class is the convention target; secondary are the ones from the map
+    const primaryClass = conventionTarget || (coveredClasses.length > 0 ? coveredClasses[0] : null)
+    if (!primaryClass) continue
+
+    // Look up JaCoCo coverage
+    const coverage = coverageLookup.get(primaryClass)
+    const jacocoLineCoverage = coverage ? coverage.line.percent : null
+
+    // Check if now incidental
+    const isNowIncidental = incidentalClassNames.has(primaryClass)
+
+    // Find remaining test files that still reference this class
+    const remainingTestFiles: string[] = []
+    for (const [testName, testMapping] of testToClassMap) {
+      if (testName === testClassName) continue // skip the deleted one
+      if (testMapping.allCoveredClasses.includes(primaryClass)) {
+        remainingTestFiles.push(testName)
+      }
+    }
+
+    // Severity: critical if incidental (coverage looks fine but isn't), warning if coverage actually dropped
+    const severity: "critical" | "warning" =
+      isNowIncidental || (jacocoLineCoverage !== null && jacocoLineCoverage > 50) ? "critical" : "warning"
+
+    issues.push({
+      productionClass: primaryClass,
+      deletedTestFile: testClassName,
+      jacocoLineCoverage,
+      isNowIncidental,
+      remainingTestFiles,
+      severity,
+    })
+  }
+
+  const classesNowIncidental = issues.filter((i) => i.isNowIncidental).length
+  const classesStillDirectlyTested = issues.filter(
+    (i) => !i.isNowIncidental && i.remainingTestFiles.length > 0,
+  ).length
+
+  return {
+    issues,
+    classesAffected: issues.length,
+    classesNowIncidental,
+    classesStillDirectlyTested,
+  }
+}
+
+// ============================================================================
+// Level 2: Changed Code Coverage
+// ============================================================================
+
+export interface ChangedClassCoverage {
+  className: string
+  changeType: "modified" | "added"
+  line: { percent: number; covered: number; missed: number } | null
+  branch: { percent: number; covered: number; missed: number } | null
+}
+
+export interface ChangedCodeCoverage {
+  classes: ChangedClassCoverage[]
+  aggregate: {
+    line: { percent: number; covered: number; missed: number }
+    branch: { percent: number; covered: number; missed: number }
+  }
+  classesWithData: number
+  classesWithoutData: number
+}
+
+/**
+ * Compute coverage specifically for changed/added production classes.
+ *
+ * Uses Merkle diff to identify which production files changed,
+ * then looks up their JaCoCo coverage.
+ */
+export function computeChangedCodeCoverage(
+  merkleDiff: { mainFiles: { modified: string[]; added: string[] } },
+  coverageData: ClassCoverage[],
+): ChangedCodeCoverage | null {
+  const changedFiles = [
+    ...merkleDiff.mainFiles.modified.map((f) => ({ file: f, type: "modified" as const })),
+    ...merkleDiff.mainFiles.added.map((f) => ({ file: f, type: "added" as const })),
+  ]
+
+  if (changedFiles.length === 0) return null
+
+  // Build coverage lookup by className
+  const coverageLookup = new Map<string, ClassCoverage>()
+  for (const cls of coverageData) {
+    coverageLookup.set(cls.className, cls)
+  }
+
+  const classes: ChangedClassCoverage[] = []
+  let totalLineCovered = 0
+  let totalLineMissed = 0
+  let totalBranchCovered = 0
+  let totalBranchMissed = 0
+  let classesWithData = 0
+  let classesWithoutData = 0
+
+  for (const { file, type } of changedFiles) {
+    // Extract class name from file path: "com/example/Foo.java" → "Foo"
+    const base = file.split("/").pop() || file
+    const className = base.replace(/\.(java|kt)$/, "")
+
+    // Skip test classes
+    if (className.endsWith("Test") || className.endsWith("Tests")) continue
+
+    const coverage = coverageLookup.get(className)
+
+    if (coverage) {
+      classesWithData++
+      totalLineCovered += coverage.line.covered
+      totalLineMissed += coverage.line.missed
+      totalBranchCovered += coverage.branch.covered
+      totalBranchMissed += coverage.branch.missed
+
+      classes.push({
+        className,
+        changeType: type,
+        line: {
+          percent: coverage.line.percent,
+          covered: coverage.line.covered,
+          missed: coverage.line.missed,
+        },
+        branch:
+          coverage.branch.covered + coverage.branch.missed > 0
+            ? {
+                percent: coverage.branch.percent,
+                covered: coverage.branch.covered,
+                missed: coverage.branch.missed,
+              }
+            : null,
+      })
+    } else {
+      classesWithoutData++
+      classes.push({
+        className,
+        changeType: type,
+        line: null,
+        branch: null,
+      })
+    }
+  }
+
+  const totalLine = totalLineCovered + totalLineMissed
+  const totalBranch = totalBranchCovered + totalBranchMissed
+
+  return {
+    classes,
+    aggregate: {
+      line: {
+        percent: totalLine > 0 ? (totalLineCovered / totalLine) * 100 : 0,
+        covered: totalLineCovered,
+        missed: totalLineMissed,
+      },
+      branch: {
+        percent: totalBranch > 0 ? (totalBranchCovered / totalBranch) * 100 : 0,
+        covered: totalBranchCovered,
+        missed: totalBranchMissed,
+      },
+    },
+    classesWithData,
+    classesWithoutData,
+  }
 }
