@@ -1,36 +1,36 @@
 {
   "version": 2,
-  "timestamp": "2026-02-18T13:24:10.096Z",
+  "timestamp": "2026-02-18T13:29:36.280Z",
   "git": {
-    "sha": "251550e33d92e4989ff9c8a3effa7c9ae317f6f4",
+    "sha": "705a6cf52c7220fdf9e03d81fea7dd9e29f8cde5",
     "isDirty": true,
-    "dirtyHash": "b45fb6577e70794a"
+    "dirtyHash": "c39862bfd48b34e0"
   },
   "configs": {
     "pom.xml": "d93173f2f6a9fc10"
   },
   "sources": {
     "testTree": {
-      "rootHash": "741d2827aca113da",
+      "rootHash": "7fd7a608cb7d66b3",
       "root": {
         "type": "directory",
         "relativePath": "",
-        "hash": "741d2827aca113da",
+        "hash": "7fd7a608cb7d66b3",
         "children": {
           "com": {
             "type": "directory",
             "relativePath": "com",
-            "hash": "4255e3aaf4d23e91",
+            "hash": "cacbb8f485dade31",
             "children": {
               "example": {
                 "type": "directory",
                 "relativePath": "com/example",
-                "hash": "5fd35fb89d5bbf91",
+                "hash": "b24a31854e87d41f",
                 "children": {
                   "currency": {
                     "type": "directory",
                     "relativePath": "com/example/currency",
-                    "hash": "4774700543670ea9",
+                    "hash": "fa9e2a56fa1c57be",
                     "children": {
                       "CurrencyApplicationMainMethodTest.java": {
                         "type": "file",
@@ -112,14 +112,14 @@
                       "service": {
                         "type": "directory",
                         "relativePath": "com/example/currency/service",
-                        "hash": "6b2719550accf67f",
+                        "hash": "546a58cdfc4e5ed0",
                         "children": {
                           "ExchangeRateServiceTest.java": {
                             "type": "file",
                             "relativePath": "com/example/currency/service/ExchangeRateServiceTest.java",
-                            "contentHash": "e7965905ea2e5d4c",
-                            "size": 8281,
-                            "mtime": 1771420951000
+                            "contentHash": "abfc61ab6e9ea433",
+                            "size": 7357,
+                            "mtime": 1771421370152
                           }
                         }
                       }
@@ -141,7 +141,7 @@
         "com/example/currency/model/ConversionRequestTest.java": "238291b93b46c338",
         "com/example/currency/model/CurrencyTest.java": "d6c95ecf575d3272",
         "com/example/currency/model/ConversionResponseTest.java": "62d303ce2b99fcd3",
-        "com/example/currency/service/ExchangeRateServiceTest.java": "e7965905ea2e5d4c"
+        "com/example/currency/service/ExchangeRateServiceTest.java": "abfc61ab6e9ea433"
       }
     },
     "mainTree": {

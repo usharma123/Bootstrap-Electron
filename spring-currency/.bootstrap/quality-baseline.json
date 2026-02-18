@@ -1,11 +1,11 @@
 {
   "version": 1,
-  "timestamp": "2026-02-18T13:24:10.056Z",
-  "commit": "251550e3",
+  "timestamp": "2026-02-18T13:29:36.245Z",
+  "commit": "705a6cf5",
   "projectPath": "/Users/utsavsharma/Documents/GitHub/Bootstrap-Electron/spring-currency",
   "metrics": {
-    "totalTests": 85,
-    "passedTests": 85,
+    "totalTests": 83,
+    "passedTests": 83,
     "failedTests": 0,
     "skippedTests": 0,
     "coverage": {
@@ -192,15 +192,13 @@
       ],
       "ExchangeRateServiceTest": [
         "serviceShouldBeCreated",
-        "convertUsdToEurShouldReturnCorrectResult",
-        "convertEurToUsdShouldReturnCorrectResult",
-        "convertSameCurrencyShouldReturnOneToOneRate",
         "convertUsdToJpyShouldReturnCorrectResult",
         "convertJpyToUsdShouldReturnCorrectResult",
         "convertZeroAmountShouldReturnZeroResult",
         "convertLargeAmountShouldHandleCorrectly",
         "convertGbpToCadShouldReturnCorrectResult",
         "convertAudToChfShouldReturnCorrectResult",
+        "convertSameCurrencyShouldReturnOneToOneRate",
         "convertCnyToInrShouldReturnCorrectResult",
         "convertMxnToUsdShouldReturnCorrectResult",
         "resultShouldBeRoundedToTwoDecimalPlaces",
@@ -213,12 +211,12 @@
       {
         "name": "mainMethodShouldCallSpringApplicationRun",
         "className": "com.example.currency.CurrencyApplicationMainMethodTest",
-        "time": 0.59
+        "time": 0.566
       },
       {
         "name": "convert_PassesCorrectRequest",
         "className": "com.example.currency.controller.CurrencyControllerTest",
-        "time": 0.567
+        "time": 0.546
       },
       {
         "name": "convert_SameCurrency",
@@ -233,7 +231,7 @@
       {
         "name": "convert_ZeroAmount",
         "className": "com.example.currency.controller.CurrencyControllerTest",
-        "time": 0.009
+        "time": 0.008
       },
       {
         "name": "currencyApplicationShouldBeInstantiable",
@@ -247,6 +245,11 @@
       },
       {
         "name": "toStringShouldContainAllFieldValues",
+        "className": "com.example.currency.model.ConversionRequestTest",
+        "time": 0.002
+      },
+      {
+        "name": "toStringShouldContainAllFieldValues",
         "className": "com.example.currency.model.ConversionResponseTest",
         "time": 0.002
       },
@@ -254,11 +257,6 @@
         "name": "openApiShouldHaveServers",
         "className": "com.example.currency.config.OpenApiConfigTest$FullOpenAPIStructureTests",
         "time": 0.002
-      },
-      {
-        "name": "serverShouldHaveDescription",
-        "className": "com.example.currency.config.OpenApiConfigTest$ServersTests",
-        "time": 0.001
       }
     ],
     "productionClasses": {
