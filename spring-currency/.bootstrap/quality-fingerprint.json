@@ -1,125 +1,125 @@
 {
   "version": 2,
-  "timestamp": "2026-02-18T13:29:36.280Z",
+  "timestamp": "2026-03-24T13:44:03.612Z",
   "git": {
-    "sha": "705a6cf52c7220fdf9e03d81fea7dd9e29f8cde5",
+    "sha": "7c7028aa48e3a238c043d5786f8fa108db3ab341",
     "isDirty": true,
-    "dirtyHash": "c39862bfd48b34e0"
+    "dirtyHash": "b95e52c8a04545f6"
   },
   "configs": {
     "pom.xml": "d93173f2f6a9fc10"
   },
   "sources": {
     "testTree": {
-      "rootHash": "7fd7a608cb7d66b3",
+      "rootHash": "f8d1abcc408867d7",
       "root": {
         "type": "directory",
         "relativePath": "",
-        "hash": "7fd7a608cb7d66b3",
+        "hash": "f8d1abcc408867d7",
         "children": {
           "com": {
             "type": "directory",
             "relativePath": "com",
-            "hash": "cacbb8f485dade31",
+            "hash": "0b0dec3a2e0521e2",
             "children": {
               "example": {
                 "type": "directory",
                 "relativePath": "com/example",
-                "hash": "b24a31854e87d41f",
+                "hash": "6e22e5eb06a51bf6",
                 "children": {
                   "currency": {
                     "type": "directory",
                     "relativePath": "com/example/currency",
-                    "hash": "fa9e2a56fa1c57be",
+                    "hash": "50587c77884a86a7",
                     "children": {
                       "CurrencyApplicationMainMethodTest.java": {
                         "type": "file",
                         "relativePath": "com/example/currency/CurrencyApplicationMainMethodTest.java",
                         "contentHash": "2c19c069c8c40678",
                         "size": 2516,
-                        "mtime": 1771421036122
+                        "mtime": 1774359835281
                       },
                       "CurrencyApplicationTest.java": {
                         "type": "file",
                         "relativePath": "com/example/currency/CurrencyApplicationTest.java",
-                        "contentHash": "abff7ec88df43898",
-                        "size": 5168,
-                        "mtime": 1771420997584
+                        "contentHash": "535ed558d5c93c4e",
+                        "size": 834,
+                        "mtime": 1774357283612
                       },
                       "CurrencyApplicationIntegrationTest.java": {
                         "type": "file",
                         "relativePath": "com/example/currency/CurrencyApplicationIntegrationTest.java",
                         "contentHash": "d32dd76e9d41354e",
                         "size": 1049,
-                        "mtime": 1771421020658
+                        "mtime": 1774357324708
                       },
                       "config": {
                         "type": "directory",
                         "relativePath": "com/example/currency/config",
-                        "hash": "ef9a9257a67fcc3d",
+                        "hash": "3982454b901e46da",
                         "children": {
                           "OpenApiConfigTest.java": {
                             "type": "file",
                             "relativePath": "com/example/currency/config/OpenApiConfigTest.java",
-                            "contentHash": "f1ac644ba060d730",
-                            "size": 5233,
-                            "mtime": 1771420931588
+                            "contentHash": "a0c6955a2b48bbb2",
+                            "size": 4081,
+                            "mtime": 1774357254415
                           }
                         }
                       },
                       "controller": {
                         "type": "directory",
                         "relativePath": "com/example/currency/controller",
-                        "hash": "b96ea039a0fecacb",
+                        "hash": "c4438b6ab707a091",
                         "children": {
                           "CurrencyControllerTest.java": {
                             "type": "file",
                             "relativePath": "com/example/currency/controller/CurrencyControllerTest.java",
-                            "contentHash": "6f05d10a3b167ecf",
-                            "size": 4858,
-                            "mtime": 1771420937206
+                            "contentHash": "b8adcd0d79fe1ae1",
+                            "size": 5864,
+                            "mtime": 1774359773260
                           }
                         }
                       },
                       "model": {
                         "type": "directory",
                         "relativePath": "com/example/currency/model",
-                        "hash": "322afc882a63876f",
+                        "hash": "0cf2f524e1012fbc",
                         "children": {
                           "ConversionRequestTest.java": {
                             "type": "file",
                             "relativePath": "com/example/currency/model/ConversionRequestTest.java",
-                            "contentHash": "238291b93b46c338",
-                            "size": 4074,
-                            "mtime": 1771420539639
+                            "contentHash": "055d33a3059a89b9",
+                            "size": 6101,
+                            "mtime": 1774356960320
                           },
                           "CurrencyTest.java": {
                             "type": "file",
                             "relativePath": "com/example/currency/model/CurrencyTest.java",
-                            "contentHash": "d6c95ecf575d3272",
-                            "size": 4430,
-                            "mtime": 1771420535289
+                            "contentHash": "b180dbe1facd7f82",
+                            "size": 6221,
+                            "mtime": 1774356858889
                           },
                           "ConversionResponseTest.java": {
                             "type": "file",
                             "relativePath": "com/example/currency/model/ConversionResponseTest.java",
-                            "contentHash": "62d303ce2b99fcd3",
-                            "size": 4466,
-                            "mtime": 1771420544644
+                            "contentHash": "a4062576bf9f8662",
+                            "size": 7690,
+                            "mtime": 1774357076630
                           }
                         }
                       },
                       "service": {
                         "type": "directory",
                         "relativePath": "com/example/currency/service",
-                        "hash": "546a58cdfc4e5ed0",
+                        "hash": "f2fb17e0e84d9602",
                         "children": {
                           "ExchangeRateServiceTest.java": {
                             "type": "file",
                             "relativePath": "com/example/currency/service/ExchangeRateServiceTest.java",
-                            "contentHash": "abfc61ab6e9ea433",
-                            "size": 7357,
-                            "mtime": 1771421370152
+                            "contentHash": "76c43d5292fe49eb",
+                            "size": 9337,
+                            "mtime": 1774357167056
                           }
                         }
                       }
@@ -133,15 +133,15 @@
       },
       "fileCount": 9,
       "fileIndex": {
-        "com/example/currency/config/OpenApiConfigTest.java": "f1ac644ba060d730",
+        "com/example/currency/config/OpenApiConfigTest.java": "a0c6955a2b48bbb2",
         "com/example/currency/CurrencyApplicationMainMethodTest.java": "2c19c069c8c40678",
-        "com/example/currency/controller/CurrencyControllerTest.java": "6f05d10a3b167ecf",
-        "com/example/currency/CurrencyApplicationTest.java": "abff7ec88df43898",
+        "com/example/currency/controller/CurrencyControllerTest.java": "b8adcd0d79fe1ae1",
+        "com/example/currency/CurrencyApplicationTest.java": "535ed558d5c93c4e",
         "com/example/currency/CurrencyApplicationIntegrationTest.java": "d32dd76e9d41354e",
-        "com/example/currency/model/ConversionRequestTest.java": "238291b93b46c338",
-        "com/example/currency/model/CurrencyTest.java": "d6c95ecf575d3272",
-        "com/example/currency/model/ConversionResponseTest.java": "62d303ce2b99fcd3",
-        "com/example/currency/service/ExchangeRateServiceTest.java": "abfc61ab6e9ea433"
+        "com/example/currency/model/ConversionRequestTest.java": "055d33a3059a89b9",
+        "com/example/currency/model/CurrencyTest.java": "b180dbe1facd7f82",
+        "com/example/currency/model/ConversionResponseTest.java": "a4062576bf9f8662",
+        "com/example/currency/service/ExchangeRateServiceTest.java": "76c43d5292fe49eb"
       }
     },
     "mainTree": {

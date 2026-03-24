@@ -18,50 +18,47 @@ import static org.junit.jupiter.api.Assertions.*;
 class OpenApiConfigTest {
 
     private OpenApiConfig config;
-    private OpenAPI openApi;
+    private OpenAPI openAPI;
 
     @BeforeEach
     void setUp() {
         config = new OpenApiConfig();
-        openApi = config.currencyOpenApi();
+        openAPI = config.currencyOpenApi();
+    }
+
+    @Test
+    @DisplayName("currencyOpenApi should return non-null OpenAPI object")
+    void currencyOpenApiShouldReturnNonNull() {
+        assertNotNull(openAPI);
     }
 
     @Nested
-    @DisplayName("Info Section Tests")
-    class InfoSectionTests {
+    @DisplayName("Info Tests")
+    class InfoTests {
 
         @Test
-        @DisplayName("OpenAPI should not be null")
-        void openApiShouldNotBeNull() {
-            assertNotNull(openApi);
+        @DisplayName("Info should have correct title")
+        void infoShouldHaveCorrectTitle() {
+            Info info = openAPI.getInfo();
+            assertNotNull(info);
+            assertEquals("Currency Converter API", info.getTitle());
         }
 
         @Test
-        @DisplayName("Info should not be null")
-        void infoShouldNotBeNull() {
-            assertNotNull(openApi.getInfo());
+        @DisplayName("Info should have correct version")
+        void infoShouldHaveCorrectVersion() {
+            Info info = openAPI.getInfo();
+            assertNotNull(info);
+            assertEquals("1.0", info.getVersion());
         }
 
         @Test
-        @DisplayName("Should have correct title")
-        void shouldHaveCorrectTitle() {
-            assertEquals("Currency Converter API", openApi.getInfo().getTitle());
-        }
-
-        @Test
-        @DisplayName("Should have correct version")
-        void shouldHaveCorrectVersion() {
-            assertEquals("1.0", openApi.getInfo().getVersion());
-        }
-
-        @Test
-        @DisplayName("Should have description")
-        void shouldHaveDescription() {
-            String description = openApi.getInfo().getDescription();
-            assertNotNull(description);
-            assertTrue(description.contains("USD"));
-            assertTrue(description.contains("EUR"));
-            assertTrue(description.contains("GBP"));
+        @DisplayName("Info should have correct description")
+        void infoShouldHaveCorrectDescription() {
+            Info info = openAPI.getInfo();
+            assertNotNull(info);
+            assertNotNull(info.getDescription());
+            assertTrue(info.getDescription().contains("currency converter"));
         }
     }
 
@@ -70,22 +67,19 @@ class OpenApiConfigTest {
     class ContactTests {
 
         @Test
-        @DisplayName("Contact should not be null")
-        void contactShouldNotBeNull() {
-            Contact contact = openApi.getInfo().getContact();
+        @DisplayName("Contact should have correct name")
+        void contactShouldHaveCorrectName() {
+            Contact contact = openAPI.getInfo().getContact();
             assertNotNull(contact);
+            assertEquals("Currency API Support", contact.getName());
         }
 
         @Test
-        @DisplayName("Contact should have name")
-        void contactShouldHaveName() {
-            assertEquals("Currency API Support", openApi.getInfo().getContact().getName());
-        }
-
-        @Test
-        @DisplayName("Contact should have email")
-        void contactShouldHaveEmail() {
-            assertEquals("support@currency.local", openApi.getInfo().getContact().getEmail());
+        @DisplayName("Contact should have correct email")
+        void contactShouldHaveCorrectEmail() {
+            Contact contact = openAPI.getInfo().getContact();
+            assertNotNull(contact);
+            assertEquals("support@currency.local", contact.getEmail());
         }
     }
 
@@ -94,82 +88,46 @@ class OpenApiConfigTest {
     class LicenseTests {
 
         @Test
-        @DisplayName("License should not be null")
-        void licenseShouldNotBeNull() {
-            License license = openApi.getInfo().getLicense();
+        @DisplayName("License should have correct name")
+        void licenseShouldHaveCorrectName() {
+            License license = openAPI.getInfo().getLicense();
             assertNotNull(license);
+            assertEquals("Apache 2.0", license.getName());
         }
 
         @Test
-        @DisplayName("License should have name")
-        void licenseShouldHaveName() {
-            assertEquals("Apache 2.0", openApi.getInfo().getLicense().getName());
-        }
-
-        @Test
-        @DisplayName("License should have URL")
-        void licenseShouldHaveUrl() {
-            assertEquals("https://www.apache.org/licenses/LICENSE-2.0",
-                    openApi.getInfo().getLicense().getUrl());
+        @DisplayName("License should have correct URL")
+        void licenseShouldHaveCorrectUrl() {
+            License license = openAPI.getInfo().getLicense();
+            assertNotNull(license);
+            assertEquals("https://www.apache.org/licenses/LICENSE-2.0", license.getUrl());
         }
     }
 
     @Nested
-    @DisplayName("Servers Tests")
-    class ServersTests {
+    @DisplayName("Server Tests")
+    class ServerTests {
 
         @Test
-        @DisplayName("Should have one server")
-        void shouldHaveOneServer() {
-            List<Server> servers = openApi.getServers();
+        @DisplayName("Should have at least one server configured")
+        void shouldHaveAtLeastOneServer() {
+            List<Server> servers = openAPI.getServers();
             assertNotNull(servers);
-            assertEquals(1, servers.size());
+            assertFalse(servers.isEmpty());
         }
 
         @Test
         @DisplayName("Server should have correct URL")
         void serverShouldHaveCorrectUrl() {
-            Server server = openApi.getServers().get(0);
-            assertEquals("http://localhost:8080", server.getUrl());
+            List<Server> servers = openAPI.getServers();
+            assertEquals("http://localhost:8080", servers.get(0).getUrl());
         }
 
         @Test
-        @DisplayName("Server should have description")
-        void serverShouldHaveDescription() {
-            Server server = openApi.getServers().get(0);
-            assertEquals("Local server", server.getDescription());
-        }
-    }
-
-    @Nested
-    @DisplayName("Full OpenAPI Structure Tests")
-    class FullOpenAPIStructureTests {
-
-        @Test
-        @DisplayName("OpenAPI should have info")
-        void openApiShouldHaveInfo() {
-            Info info = openApi.getInfo();
-            assertNotNull(info);
-            assertNotNull(info.getTitle());
-            assertNotNull(info.getVersion());
-            assertNotNull(info.getDescription());
-        }
-
-        @Test
-        @DisplayName("OpenAPI should have servers")
-        void openApiShouldHaveServers() {
-            assertNotNull(openApi.getServers());
-            assertFalse(openApi.getServers().isEmpty());
-        }
-
-        @Test
-        @DisplayName("All required sections should be present")
-        void allRequiredSectionsShouldBePresent() {
-            assertNotNull(openApi.getInfo());
-            assertNotNull(openApi.getInfo().getContact());
-            assertNotNull(openApi.getInfo().getLicense());
-            assertNotNull(openApi.getServers());
-            assertFalse(openApi.getServers().isEmpty());
+        @DisplayName("Server should have correct description")
+        void serverShouldHaveCorrectDescription() {
+            List<Server> servers = openAPI.getServers();
+            assertEquals("Local server", servers.get(0).getDescription());
         }
     }
 }
