@@ -1,82 +1,41 @@
-def getDatabaseInfoFromEnvInfo():
-    envInfoPatterns = [
-        "/cls/appl/env/*envInfo.json",
-        "/cls/appl/env/*.envInfo.json"
-    ]
+def add(a, b):
+    return a + b
 
-    envInfoFiles = []
+def subtract(a, b):
+    return a - b
 
-    for pattern in envInfoPatterns:
-        envInfoFiles.extend(glob.glob(pattern))
+def multiply(a, b):
+    return a * b
 
-    envInfoFiles = sorted(set(envInfoFiles))
+def divide(a, b):
+    if b == 0:
+        raise ValueError("Cannot divide by zero")
+    return a / b
 
-    if len(envInfoFiles) == 0:
-        print("ERROR: No envInfo json file found under /cls/appl/env/")
-        sys.exit(1)
+if __name__ == "__main__":
+    print("Basic Calculator")
+    print("Select operation:")
+    print("1. Add")
+    print("2. Subtract")
+    print("3. Multiply")
+    print("4. Divide")
 
-    candidates = []
+    choice = input("Enter choice (1/2/3/4): ")
 
-    for envInfoFile in envInfoFiles:
-        try:
-            with open(envInfoFile, "r") as f:
-                data = json.load(f)
+    if choice in ['1', '2', '3', '4']:
+        num1 = float(input("Enter first number: "))
+        num2 = float(input("Enter second number: "))
 
-            if "databaseName" in data and str(data["databaseName"]).strip() != "":
-                databaseName = str(data["databaseName"]).strip().lower()
-                envRoot = getEnvRootFromDatabaseName(databaseName)
-
-                candidates.append({
-                    "file": envInfoFile,
-                    "env_root": envRoot,
-                    "database_name": databaseName
-                })
-
-        except Exception as e:
-            print("WARNING: Unable to read envInfo file: " + envInfoFile + " error: " + str(e))
-
-    if len(candidates) == 0:
-        print("ERROR: No envInfo file contains databaseName")
-        sys.exit(1)
-
-    uniqueDatabaseNames = sorted(set([candidate["database_name"] for candidate in candidates]))
-
-    if len(uniqueDatabaseNames) > 1:
-        print("ERROR: Multiple databaseName values found. Cannot choose safely.")
-        for candidate in candidates:
-            print("  " + candidate["file"] + " -> " + candidate["database_name"])
-        sys.exit(1)
-
-    selectedDatabaseName = uniqueDatabaseNames[0]
-    selectedEnvRoot = getEnvRootFromDatabaseName(selectedDatabaseName)
-
-    print("Env info files checked:")
-    for candidate in candidates:
-        print("  " + candidate["file"] + " -> " + candidate["database_name"])
-
-    print("Database name from envInfo: " + selectedDatabaseName)
-    print("Env root derived from databaseName: " + selectedEnvRoot)
-
-    return {
-        "env_root": selectedEnvRoot,
-        "database_name": selectedDatabaseName
-    }
-
-
-def checkDatabaseExists(mysqlBaseCmd, mysqlEnv, databaseName):
-    sql = """
-SELECT SCHEMA_NAME
-FROM INFORMATION_SCHEMA.SCHEMATA
-WHERE SCHEMA_NAME = '%s';
-""" % sqlEscape(databaseName)
-
-    cmd = mysqlBaseCmd + "-N -B "
-
-    (status, result) = executeCommand(
-        cmd,
-        input=(sql.strip() + "\n").encode("utf8"),
-        env=mysqlEnv,
-        timeout=30
-    )
-
-    return result.strip() == databaseName
+        if choice == '1':
+            print(f"Result: {add(num1, num2)}")
+        elif choice == '2':
+            print(f"Result: {subtract(num1, num2)}")
+        elif choice == '3':
+            print(f"Result: {multiply(num1, num2)}")
+        elif choice == '4':
+            try:
+                print(f"Result: {divide(num1, num2)}")
+            except ValueError as e:
+                print(e)
+    else:
+        print("Invalid input")
